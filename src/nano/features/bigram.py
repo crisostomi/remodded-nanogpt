@@ -4,9 +4,12 @@ PR #201 introduced bigram-hash embeddings; PR #299 added the sign-trick
 compression, a wider vocab, a smaller bigram dim and the sliced residual
 injection. These are decomposed into independent, searchable features.
 
-``bigram_hash`` itself is kept structural for the MVP (the bigram data path /
-forward is not fully guarded for total removal), but every sub-feature on top of
-it is template-toggleable so the first ablations can move them independently.
+``bigram_hash`` is now template-toggleable: the bigram data path (loader hash +
+sparse-grad comms machinery), the forward injection sites and the owned params
+(``bigram_embed``, ``x0_lambdas``, ``bigram_lambdas``) are all guarded, so the
+whole family can be dropped together. Disabling it also drops the x0
+re-injection (``x0_lambdas`` is bundled into this gene's ownership). Every
+sub-feature ``requires`` it, so they cascade off when it is dropped.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ PADDED_VOCAB = 50304
     modifies_forward=True,
     modifies_optimizer=True,
     modifies_data=True,
+    template_toggleable=True,
 ))
 def bigram_hash(ctx: "BuildContext") -> None:
     ctx.model.use_bigram_hash = True

@@ -31,6 +31,24 @@ def test_leave_one_out_over_toggleable_genes_all_render():
         _build_and_compile(fs)  # each ablation is a valid, distinct script
 
 
+def test_leave_one_out_over_entangled_architecture_genes():
+    # mudd_last_layers and value_embed_gates are independently droppable; both
+    # produce a coherent, compilable script.
+    base = current_record()
+    for fs in leave_one_out(base, ["mudd_last_layers", "value_embed_gates"]):
+        _build_and_compile(fs)
+
+
+def test_dropping_value_embeds_cluster_renders():
+    # value_embeds requires dropping its dependents together; the resulting
+    # value-embed-free script still compiles.
+    fs = resolve_feature_set(
+        preset="current_record",
+        disable=["value_embeds", "value_embed_gates", "mudd_last_layers"],
+    )
+    _build_and_compile(fs)
+
+
 def test_hyperparameter_sweep_grid_size_and_validity():
     base = current_record()
     grid = {

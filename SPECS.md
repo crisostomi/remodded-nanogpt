@@ -9,7 +9,7 @@
 > loading + presets, Jinja codegen that emits `train_current_record.py`
 > behavior-equivalent to the record, local manifest / log parser / tracking
 > backends (NoOp / LocalJsonl / Flywheel-stub), the `run_combo` dry-run CLI, and
-> tests. **49 tests pass.**
+> tests. **63 tests pass.**
 >
 > **Adaptations from this spec (agreed with the maintainer):**
 > - Package lives at **`src/nano/`** (the repo's uv src-layout template), so CLI
@@ -26,11 +26,13 @@
 > next record — not just reproduce past records. A "feature" here is a **gene**;
 > genes come in kinds **additive / allele / substrate / tuning**; each record is a
 > coherent gene *prefix*. See `docs/GENE_MAP.md` (all 83 records → commit → genes,
-> allele groups, substrate eras). Current search space: **15 toggleable
+> allele groups, substrate eras). Current search space: **19 toggleable
 > architectural genes × optimizer tuning (`optim:` overrides) × full curriculum
-> (`schedule.training_stages`)**. Remaining work (entangled architecture genes,
-> the allele mechanism + optimizer alleles) is in `docs/HANDOFF.md` §7, including
-> the **no-GPU validation gap** that matters for optimizer-internal genes.
+> (`schedule.training_stages`)** — now including the entangled `value_embeds`,
+> `value_embed_gates`, `mudd_last_layers` and `bigram_hash` families (with a
+> dependency lattice; see HANDOFF §4). Remaining work (`mtp_loss`, the allele
+> mechanism + optimizer alleles) is in `docs/HANDOFF.md` §7, including the **no-GPU
+> validation gap** that matters for the loss/optimizer-internal genes.
 
 Use this as the implementation spec for the coding agent.
 

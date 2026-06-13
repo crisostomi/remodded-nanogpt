@@ -1,8 +1,10 @@
 """Misc model features: value embeddings, gates, smear, paired heads, key offset.
 
-All structural for the MVP (always rendered in the record script). They own the
-params they introduce so the optimizer table stays consistent, and flip context
-flags read by the manifest and the template's construction-time guards.
+All template-toggleable: each is fully guarded across model construction, the
+optimizer param table and the hot forward, so any subset renders a coherent
+script. They own the params they introduce so the optimizer table stays
+consistent. ``value_embed_gates`` requires ``value_embeds`` (it gates them); the
+value-embed off-state drops auxiliary V entirely.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ if TYPE_CHECKING:
     owns_params=("value_embeds",),
     modifies_model=True,
     modifies_forward=True,
+    template_toggleable=True,
 ))
 def value_embeds(ctx: "BuildContext") -> None:
     ctx.model.use_value_embeds = True
@@ -34,6 +37,7 @@ def value_embeds(ctx: "BuildContext") -> None:
     owns_params=("ve_gate_bank",),
     modifies_model=True,
     modifies_forward=True,
+    template_toggleable=True,
 ))
 def value_embed_gates(ctx: "BuildContext") -> None:
     ctx.model.use_value_embed_gates = True

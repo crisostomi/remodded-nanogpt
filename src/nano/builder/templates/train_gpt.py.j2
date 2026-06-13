@@ -1321,6 +1321,7 @@ class GPT(nn.Module):
             )
         )
 
+{% if model.use_mudd %}
     def init_mudd(self, num_layers: int, model_dim: int):
         """
         Multiway Dynamic Dense Connections @lishengping. https://arxiv.org/abs/2502.12170
@@ -1371,6 +1372,7 @@ class GPT(nn.Module):
         x = F.gelu(F.linear(x, self.mudd_w1[id]))
         x = (F.linear(x, self.mudd_w2[id, :num_coef]) + self.mudd_b2[id, :num_coef]) * self._mudd_scale
         return x.split(1, dim=-1)
+{% endif %}
 
     def forward(self, input_seq: Tensor, target_seq: Tensor, seqlens: Tensor, bigram_input_seq: Tensor, schedule_cfg: ForwardScheduleConfig):
         assert input_seq.ndim == 1
@@ -1391,18 +1393,24 @@ class GPT(nn.Module):
         resid_lambdas_mlp  = self.resid_lambdas[:, 1].bfloat16().unbind(0)
         post_lambdas_attn = self.post_lambdas[:, 0].bfloat16().unbind(0)
         post_lambdas_mlp  = self.post_lambdas[:, 1].bfloat16().unbind(0)
+{% if model.use_bigram_hash %}
         x0_lambdas = self.x0_lambdas.bfloat16().unbind(0)
         bigram_lambdas = self.bigram_lambdas.bfloat16().unbind(0)
+{% endif %}
 {% if model.use_sparse_attention_gate %}
         ag = self.attn_gate_bank.unbind(0)
 {% endif %}
+{% if model.use_value_embed_gates %}
         veg = self.ve_gate_bank.unbind(0)
+{% endif %}
 {% if model.use_sparse_attention_gate %}
         attn_gates = [*ag[:6], None, *ag[6:]]
 {% else %}
         attn_gates = [None] * self.num_layers
 {% endif %}
+{% if model.use_value_embed_gates %}
         ve_gates = [None, veg[0], veg[1], *self.gate_filler_nones, veg[2], veg[3], veg[4]]
+{% endif %}
 {% if model.use_xsa %}
         # XSA on non-paired attn layers only; paired {0,2,5,9} and MLP-only layer 6 skipped
         xsa_alpha_per_layer = self.xsa_alphas.unbind(0)
@@ -1411,7 +1419,9 @@ class GPT(nn.Module):
         xsa_alphas = [None] * self.num_layers
 {% endif %}
         assert len(attn_gates) == self.num_layers
+{% if model.use_value_embed_gates %}
         assert len(ve_gates) == self.num_layers
+{% endif %}
         qk_all = self.qk_bank[:self._num_qk_groups].view(self._num_attn_layers, -1, self.qk_bank.shape[-1])
         vo_flat = self.vo_bank[:self._num_attn_layers * 2].view(self._num_attn_layers, 2, *self.vo_bank.shape[1:]).flatten(1, 2)
         attn_weights = torch.cat([qk_all, vo_flat], dim=1).unbind(0)
@@ -1422,6 +1432,7 @@ class GPT(nn.Module):
         # ---- Embeddings and input preparation ----
         x = self.embed(input_seq) # embed is synced from lm_head during tied phase by optimizer
         
+{% if model.use_bigram_hash %}
 {% if model.use_bigram_sign_trick %}
         # Use sign-trick to better compress multiple bigrams into a shared bigram embedding row
         # (details in https://github.com/KellerJordan/modded-nanogpt/pull/299 by @trianxy)
@@ -1432,12 +1443,15 @@ class GPT(nn.Module):
 {% else %}
         x0_bigram = self.bigram_embed(bigram_input_seq)[None]
 {% endif %}
+{% endif %}
 
+{% if model.use_value_embeds %}
         # Value embeddings - always computed (not precomputed)
         ve = self.value_embeds.view(5, self.vocab_size, -1)[:, input_seq]
         # Shifted .01 ... 234 structure on token value embeddings by @photomz
         ve = [None, ve[0], ve[1], *self.gate_filler_nones, ve[2], ve[3], ve[4]]
         assert len(ve) == self.num_layers
+{% endif %}
 
         # smear token embed forward 1 position @classiclarryd
 {% if model.use_smear %}
@@ -1446,17 +1460,21 @@ class GPT(nn.Module):
 {% endif %}
         x = x0 = norm(x[None])
 
+{% if model.use_bigram_hash %}
         # Initialize residual stream with pre-layer-0 bigram injection
 {% if model.use_residual_slice_bigram_injection %}
         x[..., :args.bigram_dim] = x[..., :args.bigram_dim] + x0_bigram * bigram_lambdas[0]
 {% else %}
         x = x + x0_bigram * bigram_lambdas[0]
 {% endif %}
+{% endif %}
 
+{% if model.use_bigram_hash %}
         # Precompute x0/bigram injection (added to attention output each layer)
         # Layer 0: bigram already injected above, so only x0 component
         x0_inject = tuple(x0 * x0_lambdas[i] for i in range(self.num_layers))
         bg_inject = (None,) + tuple(x0_bigram * bigram_lambdas[i] for i in range(1, self.num_layers))
+{% endif %}
 {% if model.use_skip_gate %}
         skip_gate_out = torch.sigmoid(skip_lambda) * 2 * torch.sigmoid(self.skip_gate(x0[..., :self.skip_gate.weight.size(-1)]))
 {% endif %}
@@ -1470,7 +1488,9 @@ class GPT(nn.Module):
             attn = self.attn_paired if is_paired else self.attn
             c_fc = mlp_fcs[i]
             c_proj = mlp_projs[i]
+{% if model.use_mudd %}
             mu = None
+{% endif %}
 
             # Skip attention on layer 6 @YouJiacheng
             if i == 6:
@@ -1484,6 +1504,8 @@ class GPT(nn.Module):
                 attn_in_normed = norm(cache.get(7, x))
                 B, T = attn_in_normed.size(0), attn_in_normed.size(1)
 
+{% if model.use_value_embeds %}
+{% if model.use_mudd %}
                 if i == self.num_layers - 1:
                     cache[9] = x
                     mu = self.forward_mudd(x, id=0, num_coef=14)
@@ -1495,13 +1517,24 @@ class GPT(nn.Module):
                     ve_view = ve[i].view(B, T, self.num_heads, self.head_dim)
                     aux_v = (ve_gate * ve_view + v_mudd).view(B, T, -1)
                 elif ve[i] is not None:
+{% else %}
+                if ve[i] is not None:
+{% endif %}
+{% if model.use_value_embed_gates %}
                     # gate pattern g(x[:6] + ve[:6]) by @photomz
                     gate_in = torch.cat([attn_in_normed[..., :6], ve[i][None, ..., :6]], dim=-1)
                     ve_gate_out = 2 * torch.sigmoid(F.linear(gate_in, ve_gates[i])).view(B, T, self.num_heads, 1)
                     ve_view = ve[i].view(B, T, self.num_heads, self.head_dim)
                     aux_v = (ve_gate_out * ve_view).view(B, T, -1)
+{% else %}
+                    ve_view = ve[i].view(B, T, self.num_heads, self.head_dim)
+                    aux_v = ve_view.view(B, T, -1)
+{% endif %}
                 else:
                     aux_v = None
+{% else %}
+                aux_v = None
+{% endif %}
 
                 attn_args = AttnArgs(
                     sa_lambdas=sa_lambdas[i],
@@ -1516,14 +1549,18 @@ class GPT(nn.Module):
                 )
                 attn_out = attn(attn_in_normed, attn_args, qkvo_w)
 
+{% if model.use_mudd %}
                 if mu is not None:
                     x = mu[8] * x + mu[9] * attn_out + mu[10] * cache[0] 
+{% if model.use_bigram_hash %}
 {% if model.use_residual_slice_bigram_injection %}
                     x[..., :args.bigram_dim] = x[..., :args.bigram_dim] + mu[11] * x0_bigram
 {% else %}
                     x = x + mu[11] * x0_bigram
 {% endif %}
+{% endif %}
                 else:
+{% if model.use_bigram_hash %}
                     x = resid_lambdas_attn[i] * x + post_lambdas_attn[i] * attn_out + x0_inject[i]
                     if bg_inject[i] is not None:
 {% if model.use_residual_slice_bigram_injection %}
@@ -1531,19 +1568,41 @@ class GPT(nn.Module):
 {% else %}
                         x = x + bg_inject[i]
 {% endif %}
+{% else %}
+                    x = resid_lambdas_attn[i] * x + post_lambdas_attn[i] * attn_out
+{% endif %}
+{% else %}
+{% if model.use_bigram_hash %}
+                x = resid_lambdas_attn[i] * x + post_lambdas_attn[i] * attn_out + x0_inject[i]
+                if bg_inject[i] is not None:
+{% if model.use_residual_slice_bigram_injection %}
+                    x[..., :args.bigram_dim] = x[..., :args.bigram_dim] + bg_inject[i]
+{% else %}
+                    x = x + bg_inject[i]
+{% endif %}
+{% else %}
+                x = resid_lambdas_attn[i] * x + post_lambdas_attn[i] * attn_out
+{% endif %}
+{% endif %}
 
+{% if model.use_mudd %}
             if mu is not None:
                 x = mu[12] * x + mu[13] * ReLUSqrdMLP(norm(x), c_fc, c_proj)
             else:
                 x = resid_lambdas_mlp[i] * x + post_lambdas_mlp[i] * ReLUSqrdMLP(norm(x), c_fc, c_proj)
+{% else %}
+            x = resid_lambdas_mlp[i] * x + post_lambdas_mlp[i] * ReLUSqrdMLP(norm(x), c_fc, c_proj)
+{% endif %}
 
             if i in self.cache_layers:
                 cache[i] = x
 
+{% if model.use_mudd %}
         # Post-loop MUDD: 5 residual coefs over {cache[0], cache[7], cache[9], ve_bank0, cache[3]}.
         mu = self.forward_mudd(x, id=1, num_coef=5)
         ve_bank0 = ve[1][None].to(dtype=x.dtype)  # (1, T, D), same VE as layer-1 attn
         x = x + mu[0] * cache[0] + mu[1] * cache[7] + mu[2] * cache[9] + mu[3] * ve_bank0 + mu[4] * cache[3]
+{% endif %}
 
         x = norm(x)
         # @Grad62304977 added tanh softcapping following Gemma 2 paper, @KoszarskyB reduced it from 30 to 15
@@ -1722,7 +1781,11 @@ def distributed_data_generator(filename_pattern: str, num_tokens: int, max_seq_l
         _inputs = _inputs.to(dtype=torch.int32)
         _targets = _targets.to(dtype=torch.int64)
         _cum_lengths = _cum_lengths.to(dtype=torch.int32)
+{% if data.needs_bigram_inputs %}
         _bigram_inputs = get_bigram_hash(_inputs)
+{% else %}
+        _bigram_inputs = _inputs  # bigram_hash disabled: forward ignores this
+{% endif %}
 
         new_params = yield (
             _inputs.to(device="cuda", non_blocking=True),
@@ -1764,8 +1827,16 @@ class Hyperparameters:
     save_checkpoint: bool = False
     run_evals: bool = False  # run additional evaluations after training is completed
     # bigram hash embedding
+{% if model.use_bigram_hash %}
     bigram_vocab_size: int = {{ model.bigram_vocab_size }}
+{% else %}
+    bigram_vocab_size: int = 50304 * 15
+{% endif %}
+{% if model.use_bigram_hash %}
     bigram_dim: int = {{ model.bigram_dim }}
+{% else %}
+    bigram_dim: int = 192
+{% endif %}
 {% if model.use_bigram_sign_trick %}
     bigram_sign_table_rows: int = {{ model.bigram_sign_table_rows }}  # prefer a power of 2 (values ~500-15000 gave similar results)
 {% endif %}
@@ -1972,17 +2043,20 @@ class TrainingManager():
         self.train_max_seq_len = stage.train_max_seq_len
         self.model.yarn.reset()
         self.model.yarn_paired_head.reset()
+{% if model.use_bigram_hash %}
         if _sparse_comms_active():
             self.row_update_mask = np.zeros(args.bigram_vocab_size, dtype=np.uint8)
             self.sparse_counts_state = None
             # buffer we use for fast GPU uploads of send indexes
             self.send_idxes_buffer = torch.empty(args.bigram_vocab_size, dtype=torch.int32, pin_memory=True)
+{% endif %}
 
 
     def get_state(self):
         return copy.deepcopy(self.optimizer.state_dict())
 
     def sparse_index_update(self, step, bigram_indexes):
+{% if model.use_bigram_hash %}
         if not _sparse_comms_active():
             return
 
@@ -1995,8 +2069,12 @@ class TrainingManager():
                     bigram_idx_np, args.bigram_vocab_size, rank, world_size, self.send_idxes_buffer
                 )
                 self.sparse_counts_state = (send_idxes, send_counts, recv_counts, recv_counts_fut)
+{% else %}
+        return
+{% endif %}
 
     def sparse_index_share(self, step):
+{% if model.use_bigram_hash %}
         if not _sparse_comms_active() or not self._is_adam_step(step):
             return
 
@@ -2009,6 +2087,9 @@ class TrainingManager():
         self.optimizer._sparse_async_data[model.bigram_embed.weight] = sparse_state
 
         self.row_update_mask.fill(0)
+{% else %}
+        return
+{% endif %}
 
 
         

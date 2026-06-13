@@ -32,6 +32,59 @@ def test_unknown_feature_rejected():
         build_context({"not_a_real_feature"})
 
 
+def test_mudd_requires_value_embeds():
+    # MUDD's last-layer branch fuses ve_view and its post-loop mixer reads ve[1].
+    with pytest.raises(FeatureValidationError, match="mudd_last_layers requires value_embeds"):
+        build_context(current_record() - {"value_embeds"} | {"mudd_last_layers"} - {"value_embed_gates"})
+
+
+def test_value_embed_gates_requires_value_embeds():
+    with pytest.raises(FeatureValidationError, match="value_embed_gates requires value_embeds"):
+        build_context({"value_embed_gates"})
+
+
+def test_disable_value_embeds_cluster_prunes_owned_params():
+    enabled = current_record() - {"value_embeds", "value_embed_gates", "mudd_last_layers"}
+    ctx = build_context(enabled)
+    for label in ("value_embeds", "ve_gate_bank", "mudd_w1", "mudd_w2", "mudd_b2"):
+        assert label not in ctx.optim.param_table
+        assert label not in ctx.optim.work_order
+        assert label not in ctx.optim.scatter_order
+
+
+def test_disable_mudd_prunes_only_mudd_params():
+    ctx = build_context(current_record() - {"mudd_last_layers"})
+    for label in ("mudd_w1", "mudd_w2", "mudd_b2"):
+        assert label not in ctx.optim.param_table
+    # value embeds + gates survive (MUDD does not own them).
+    assert "value_embeds" in ctx.optim.param_table
+    assert "ve_gate_bank" in ctx.optim.param_table
+
+
+BIGRAM_FAMILY = {
+    "bigram_hash", "bigram_sign_trick", "bigram_vocab_15x", "bigram_dim_192",
+    "residual_slice_bigram_injection", "sparse_bigram_comms",
+}
+
+
+def test_dropping_bigram_hash_requires_dropping_dependents():
+    # Every sub-feature requires bigram_hash, so dropping it alone is rejected.
+    with pytest.raises(FeatureValidationError, match="requires bigram_hash"):
+        build_context(current_record() - {"bigram_hash"})
+
+
+def test_disable_bigram_family_prunes_owned_params():
+    ctx = build_context(current_record() - BIGRAM_FAMILY)
+    for label in ("bigram_embed", "x0_lambdas", "bigram_lambdas"):
+        assert label not in ctx.optim.param_table
+        assert label not in ctx.optim.work_order
+        assert label not in ctx.optim.scatter_order
+    # MUDD requires only value_embeds, so it survives a bigram drop.
+    assert {"mudd_w1", "mudd_w2", "mudd_b2"} <= set(ctx.optim.param_table)
+    # The data path no longer needs bigram inputs.
+    assert ctx.data.needs_bigram_inputs is False
+
+
 def test_sparse_attention_gate_soft_conflicts_with_xsa():
     # current_record enables both sparse_attention_gate and xsa -> soft-conflict warning.
     ctx = build_context(current_record())

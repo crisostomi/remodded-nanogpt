@@ -1,8 +1,9 @@
 # HANDOFF — remodded-nanogpt gene-search framework
 
 > Authoritative current-state + continuation guide for the next agent/engineer.
-> Last updated: 2026-06-13. Branch: `feat/gene-search-framework` (head `614e5be`,
-> off `main`). Pushed to `origin`. Not yet merged / no PR opened.
+> Last updated: 2026-06-13. Base framework on `main` (head `05f5eb4`). The
+> entangled-gene toggle work (§4, §7a) is on branch
+> `feat/toggleable-entangled-genes` (off `main`), not yet committed/pushed.
 
 ---
 
@@ -26,8 +27,10 @@ are resolved at *generation* time into a static script.
 
 ## 2. Current status
 
-- **Engine: complete and tested.** 49 tests pass (`uv run --extra test pytest src/tests`).
-- **26 genes registered**; **15 template-toggleable**, **11 structural** (see §4).
+- **Engine: complete and tested.** 63 tests pass (`uv run --extra test pytest src/tests`;
+  if the local `uv.lock` fails to parse with an older `uv`, use
+  `PYTHONPATH=src python3 -m pytest src/tests` — see §9).
+- **26 genes registered**; **19 template-toggleable**, **7 structural** (see §4).
 - **Tuning genes** and the **full curriculum** are searchable config dimensions.
   Global optimizer overrides: `optim.adam` = {`lr`, `eps`, `weight_decay`},
   `optim.normuon` = {`lr`, `momentum`, `beta2`, `weight_decay`}. Per-parameter:
@@ -94,24 +97,50 @@ Package is `nano` under `src/nano/` (src-layout, uv template). CLI entry points 
 
 ## 4. The gene library
 
-**Toggleable (15)** — fully guarded across model construction, optimizer table and
-hot forward; any subset renders a coherent, compile-valid script:
+**Toggleable (19)** — fully guarded across model construction, optimizer table and
+hot forward; any subset (respecting the dependency lattice below) renders a
+coherent, compile-valid script:
 
-`adam_every_other_step`, `bigram_dim_192`, `bigram_sign_trick`, `bigram_vocab_15x`,
-`fp8_lm_head`, `paired_head_attention`, `partial_key_offset`,
-`residual_slice_bigram_injection`, `skip_gate`, `smear`, `sparse_attention_gate`,
-`sparse_bigram_comms`, `untie_embed_at_2_3`, `xsa`, `xsa_lowering_rewrite`.
+`adam_every_other_step`, `bigram_dim_192`, `bigram_hash`, `bigram_sign_trick`,
+`bigram_vocab_15x`, `fp8_lm_head`, `mudd_last_layers`, `paired_head_attention`,
+`partial_key_offset`, `residual_slice_bigram_injection`, `skip_gate`, `smear`,
+`sparse_attention_gate`, `sparse_bigram_comms`, `untie_embed_at_2_3`,
+`value_embeds`, `value_embed_gates`, `xsa`, `xsa_lowering_rewrite`.
 
-**Structural (11)** — always-on for now; the builder refuses to disable them
+The four **entangled architecture genes** made toggleable most recently
+(`value_embeds`, `value_embed_gates`, `mudd_last_layers`, `bigram_hash`) form a
+dependency lattice — the builder rejects an enabled set that violates it:
+
+- `value_embed_gates` **requires** `value_embeds` (off-state: ungated
+  `aux_v = ve_view.view(B, T, -1)`).
+- `mudd_last_layers` **requires** `value_embeds` (its last-layer branch fuses
+  `ve_view` and its post-loop mixer reads `ve[1]`). Off-state: the last layer
+  degrades from the MUDD branch to the normal per-layer residual path
+  (`elif ve[i]` → `if ve[i]`), the post-loop mixer + `cache[9]` + `mu` sentinel +
+  the `init_mudd`/`forward_mudd` methods are dropped. MUDD does **not** require
+  `bigram_hash`: its `mu[11] * x0_bigram` injection is guarded independently, so
+  MUDD composes with bigram on **or** off.
+- the whole bigram family (`bigram_sign_trick`, `bigram_vocab_15x`,
+  `bigram_dim_192`, `residual_slice_bigram_injection`, `sparse_bigram_comms`)
+  **requires** `bigram_hash`, so dropping `bigram_hash` cascades them off.
+  Bigram-off also drops the `x0` re-injection (`x0_lambdas` is bundled into this
+  gene's `owns_params`), zeroes the data-loader hash to a placeholder, and turns
+  the TrainingManager sparse-grad-comms methods into no-ops (the optimizer's
+  `sharded_sparse` path self-gates on the `comms` field — no param carries it
+  once `bigram_embed` is pruned, so `model.bigram_embed` is never dereferenced).
+
+**Structural (7)** — always-on for now; the builder refuses to disable them
 (`validate_renderable`). Categorized:
 
 - **Already covered by curriculum search** (redundant as toggles —
   `TRAINING_STAGES` is fully searchable): `batch_size_schedule`,
   `max_seq_len_schedule`, `yarn_window_schedule`.
-- **Entangled architecture genes** (next work, §7a): `bigram_hash` (root),
-  `value_embeds`, `value_embed_gates`, `mudd_last_layers`, `mtp_loss`. Their "off"
-  states are real pre-feature behaviors woven through the last-layer / post-loop
-  forward (e.g. the MUDD branch consumes value-embeds). Structurally verifiable.
+- **`mtp_loss`** (still structural; §7a). Deferred deliberately: its "off" state
+  (single-token CE) lives inside the external `FusedSoftcappedCrossEntropy` Triton
+  kernel (imported from `triton_kernels`, **not vendored here**) and is entangled
+  with `fp8_lm_head` and the data loader's target construction, so it is **not
+  structurally verifiable on this no-GPU box** — exactly the validation gap in §2.
+  Sequence it against a real GPU checkout.
 - **Optimizer alleles** (§7b, needs GPU validation): `normuon`, `polar_express`
   (the optimizer / orthogonalizer slot), `cautious_weight_decay`. Need the
   **allele mechanism** + alternative implementations harvested from git history.
@@ -132,6 +161,14 @@ byte-identical to the record.
 ```sh
 python baseline/build_template.py     # rewrites the .j2; must be committed
 ```
+
+The `.j2` is a **committed generated artifact** — regenerate and commit it in
+the *same* change as any `build_template.py` edit. The test
+`test_codegen.py::test_committed_template_matches_build_script` calls
+`build_template.build_template_text()` and byte-compares it to the committed
+`.j2`, so stale-template drift fails loudly in CI instead of silently shipping a
+broken off-state to the GPU. (`build_template_text()` is the pure, no-I/O core;
+`main()` is the thin file-writing wrapper.)
 
 The builder has two replacement kinds:
 - **exact** `(old, new)` tuples in the `EXACT` list — `old` must occur exactly once.
@@ -188,10 +225,15 @@ Worked examples to copy: `sparse_attention_gate` (param + forward + table), `sme
 
 ## 7. Next steps (prioritized)
 
-**(a) Entangled architecture genes** — `bigram_hash` root, `value_embeds`,
-`value_embed_gates`, `mudd_last_layers`, `mtp_loss`. Harvest each "off" state from
-the pre-feature commit (shas in `docs/GENE_MAP.md`), guard the (multiple) forward
-sites, handle the MUDD/value-embed interaction. Compile/structure-verifiable.
+**(a) Entangled architecture genes** — ✅ **DONE for 4 of 5**: `value_embeds`,
+`value_embed_gates`, `mudd_last_layers`, `bigram_hash` are now template-toggleable
+(see §4 for the dependency lattice + off-states; verified by equivalence-diff,
+all-combo compile, structural greps and tests). **Remaining: `mtp_loss`** — needs
+a real GPU checkout because its off-state lives in the external
+`FusedSoftcappedCrossEntropy` kernel (§4). When you do it: guard the
+`FusedSoftcappedCrossEntropy.apply(..., mtp_weights, ...)` call + the train-time
+loss branch + the MTP-weight schedule, and decide the single-token-CE fallback
+against the actual kernel semantics.
 
 **(b) Allele mechanism + optimizer alleles** — implement "exactly-one-of" slots
 (see `GENE_MAP.md` §3: optimizer, orthogonalizer, attention_backend, cross_entropy,
@@ -218,7 +260,7 @@ search) — trivial given `GENE_MAP.md`'s sha index.
 
 ```sh
 uv sync --extra test                       # install (jinja2, pyyaml, numpy, pytest)
-uv run --extra test pytest src/tests       # 49 tests (the `test` extra carries pytest)
+uv run --extra test pytest src/tests       # 63 tests (the `test` extra carries pytest)
 python baseline/build_template.py          # regenerate the .j2 after editing the builder
 python -m nano.builder.codegen --preset current_record --out generated/train_current_record.py
 python -m nano.search.run_combo --preset current_record --disable xsa --dry-run
@@ -276,6 +318,21 @@ from nano.search.candidate_space import leave_one_out, hyperparameter_sweep
   - Records form a chain; genes are tied to a *substrate*. Cross-substrate
     combinations require porting a gene forward (see GENE_MAP eras). The current
     code is era **E15**.
+  - **`uv.lock` may not parse with an older `uv`:** the committed `uv.lock` was
+    written by a newer `uv` (the editable root has no `version` field), so
+    `uv 0.5.4` errors with `missing field version` and `uv run --extra test ...`
+    fails before running anything. Fallback that needs no `uv`: the repo deps
+    (jinja2, pyyaml, numpy, pytest) are import-only, so
+    `PYTHONPATH=src python3 -m pytest src/tests` and
+    `PYTHONPATH=src python3 -m nano.builder.codegen ...` work directly. The codegen
+    path needs no GPU/torch.
+  - **Don't run git-mutating commands in the shared working tree when fanning out
+    review agents.** The off-state work lives as *uncommitted* edits (incl. the
+    regenerated `.j2`); an audit agent that runs `git checkout`/`restore` on the
+    `.j2` will silently revert it to the stale committed version and make the
+    off-states look broken. Tell review agents to be read-only (render variants to
+    `/tmp`, never regenerate into the repo, no git mutations). Worktree isolation
+    is *wrong* for auditing uncommitted work — a fresh worktree won't contain it.
   - **Editable-install / worktree gotcha:** `nano` is an editable install whose
     `.pth` hardcodes *this* repo's `src/`. If you work in a second checkout or a
     git worktree, the main `.venv`'s `python` still imports `nano` from the
