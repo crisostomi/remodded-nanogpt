@@ -397,6 +397,12 @@ def main() -> int:
         "\n\n        adam_defaults = dict(",
         "{{ work_order_block }}",
     )
+    text = replace_region(
+        text,
+        "TRAINING_STAGES = [\n",
+        "\n\n# TODO - Confirm.",
+        "{{ training_stages_block }}",
+    )
 
     for old, new in EXACT:
         count = text.count(old)

@@ -77,6 +77,21 @@ BASELINE_WORK_ORDER: list[str] = [
 ADAM_DEFAULTS: dict[str, Any] = dict(lr=0.008, eps=1e-10, weight_decay=0.005)
 NORMUON_DEFAULTS: dict[str, Any] = dict(lr=0.023, momentum=0.95, beta2=0.9, weight_decay=1.2)
 
+#: Baseline training curriculum (rendered into ``TRAINING_STAGES``). Each stage's
+#: numeric genes -- duration, batch size, window sizes, max seq len, LR mul and
+#: the MTP-weight schedule -- are searchable via a ``schedule.training_stages``
+#: override. The final (extension) stage has no ``duration``.
+BASELINE_TRAINING_STAGES: list[dict[str, Any]] = [
+    {"duration": 1 / 3, "train_max_seq_len": 896,  "batch_size": 8 * 2048 * 8,  "window_sizes": [1, 3],
+     "lr_mul": 1.0,  "mtp_weights_start": [1.0, 0.5, 0.25], "mtp_weights_end": [1.0, 0.5, 0.0]},
+    {"duration": 1 / 3, "train_max_seq_len": 2048, "batch_size": 16 * 2048 * 8, "window_sizes": [3, 7],
+     "lr_mul": 1.52, "mtp_weights_start": [1.0, 0.5],       "mtp_weights_end": [1.0, 0.0]},
+    {"duration": 1 / 3, "train_max_seq_len": 2048, "batch_size": 24 * 2048 * 8, "window_sizes": [5, 11],
+     "lr_mul": 1.73, "mtp_weights_start": [1.0],             "mtp_weights_end": [1.0]},
+    {"duration": None,  "train_max_seq_len": 2048, "batch_size": 24 * 2048 * 8, "window_sizes": [6, 13],
+     "lr_mul": 1.0,  "mtp_weights_start": [1.0],             "mtp_weights_end": [1.0]},
+]
+
 
 @dataclass
 class ModelConfig:
@@ -206,4 +221,5 @@ class BuildContext:
         self.optim.adam_defaults = dict(ADAM_DEFAULTS)
         self.optim.normuon_defaults = dict(NORMUON_DEFAULTS)
         self.optim.scatter_order = list(self.optim.param_table)
+        self.schedule.training_stages = copy.deepcopy(BASELINE_TRAINING_STAGES)
         return self

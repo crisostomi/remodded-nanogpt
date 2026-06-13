@@ -124,3 +124,27 @@ def test_fp8_and_partial_key_offset_are_toggleable():
     ctx = build_context(current_record() - {"fp8_lm_head", "partial_key_offset"})
     assert ctx.model.use_fp8_lm_head is False
     assert ctx.model.use_partial_key_offset is False
+
+
+# ---- curriculum genes (TRAINING_STAGES is searchable config) ----
+
+def test_baseline_curriculum_boundaries_preserved():
+    from itertools import accumulate
+
+    ctx = build_context(current_record())
+    durs = [s["duration"] for s in ctx.schedule.training_stages[:-1]]
+    ends = [0, *[round(c * 1375) for c in accumulate(durs)], 1385]
+    assert ends == [0, 458, 917, 1375, 1385]  # identical to the record
+
+
+def test_curriculum_override_changes_stages():
+    import copy
+
+    from nano.builder.context import BASELINE_TRAINING_STAGES
+
+    stages = copy.deepcopy(BASELINE_TRAINING_STAGES)
+    stages[0]["batch_size"] = 12 * 2048 * 8
+    stages[0]["window_sizes"] = [2, 4]
+    ctx = build_context(current_record(), overrides={"schedule": {"training_stages": stages}})
+    assert ctx.schedule.training_stages[0]["batch_size"] == 12 * 2048 * 8
+    assert ctx.schedule.training_stages[0]["window_sizes"] == [2, 4]

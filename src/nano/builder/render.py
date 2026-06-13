@@ -225,6 +225,27 @@ def format_defaults(name: str, defaults: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def format_training_stages(ctx: BuildContext) -> str:
+    """Render ``TRAINING_STAGES = [...]`` from the context's curriculum genes."""
+    lines = ["TRAINING_STAGES = ["]
+    for st in ctx.schedule.training_stages:
+        kwargs = []
+        if st.get("duration") is not None:
+            kwargs.append(f"duration={_pyval(st['duration'])}")
+        ws = st["window_sizes"]
+        kwargs += [
+            f"train_max_seq_len={_pyval(st['train_max_seq_len'])}",
+            f"batch_size={_pyval(st['batch_size'])}",
+            f"window_sizes=({_pyval(ws[0])}, {_pyval(ws[1])})",
+            f"lr_mul={_pyval(st['lr_mul'])}",
+            f"mtp_weights_start={_pyval(st['mtp_weights_start'])}",
+            f"mtp_weights_end={_pyval(st['mtp_weights_end'])}",
+        ]
+        lines.append(f"    TrainingStage({', '.join(kwargs)}),")
+    lines.append("]")
+    return "\n".join(lines)
+
+
 def _render_header(header: dict[str, Any]) -> str:
     enabled = header.get("enabled_features", [])
     disabled = header.get("disabled_features", [])
@@ -273,6 +294,7 @@ def render_train_script_text(ctx: BuildContext, header: dict[str, Any] | None = 
         work_order_block=format_work_order(ctx),
         adam_defaults_block=format_defaults("adam_defaults", ctx.optim.adam_defaults),
         normuon_defaults_block=format_defaults("normuon_defaults", ctx.optim.normuon_defaults),
+        training_stages_block=format_training_stages(ctx),
     )
     return rendered
 
