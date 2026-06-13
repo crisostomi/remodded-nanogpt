@@ -221,3 +221,10 @@ fabric.properties
 
 .vscode/
 cache_dvc/
+
+# Feature-search generated artifacts and run outputs (keep dirs, ignore contents)
+/generated/*
+!/generated/.gitkeep
+/experiments/runs/*
+!/experiments/runs/.gitkeep
+/experiments/tracking.jsonl

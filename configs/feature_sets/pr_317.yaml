@@ -1,0 +1,10 @@
+name: pr_317
+description: >-
+  Remove the sparse attention gate and rewrite the XSA lowering (PR #317). This
+  is the headline first ablation: it argues the sparse attention gate may be
+  redundant with XSA. Rendered against the current record.
+base: current_record
+enable:
+  - xsa_lowering_rewrite
+disable:
+  - sparse_attention_gate

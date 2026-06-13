@@ -1,0 +1,11 @@
+name: pr_299
+description: Sign trick on bigram embeddings (PR #299 feature collection).
+# A PR is a *collection of features*, not a single toggle. This set captures the
+# features PR #299 introduced; compose it with a base (e.g. current_record) to
+# render a runnable script.
+enable:
+  - bigram_hash
+  - bigram_sign_trick
+  - bigram_vocab_15x
+  - bigram_dim_192
+  - residual_slice_bigram_injection

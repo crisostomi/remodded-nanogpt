@@ -1,0 +1,44 @@
+name: current_record
+description: >-
+  The current speedrun record feature set. The vendored baseline
+  (baseline/train_gpt.py) already bakes in every feature below, so codegen of
+  this preset renders a script behavior-equivalent to the record.
+
+enable:
+  - fp8_lm_head
+  - polar_express
+  - normuon
+  - cautious_weight_decay
+  - adam_every_other_step
+  - mtp_loss
+  - untie_embed_at_2_3
+  - bigram_hash
+  - bigram_sign_trick
+  - bigram_vocab_15x
+  - bigram_dim_192
+  - residual_slice_bigram_injection
+  - sparse_bigram_comms
+  - value_embeds
+  - value_embed_gates
+  - smear
+  - skip_gate
+  - sparse_attention_gate
+  - xsa
+  - mudd_last_layers
+  - paired_head_attention
+  - partial_key_offset
+  - yarn_window_schedule
+  - batch_size_schedule
+  - max_seq_len_schedule
+
+schedule:
+  num_scheduled_iterations: 1375
+  num_extension_iterations: 10
+  cooldown_frac: 0.60
+
+tracking:
+  project: modded-nanogpt-feature-search
+  backend: noop
+  tags:
+    - h100x8
+    - current_record

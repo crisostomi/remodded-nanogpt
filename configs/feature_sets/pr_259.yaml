@@ -1,0 +1,4 @@
+name: pr_259
+description: Trimmed MUDD dynamic dense connections + optimizer entries (PR #259).
+enable:
+  - mudd_last_layers

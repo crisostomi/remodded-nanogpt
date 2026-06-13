@@ -1,0 +1,5 @@
+name: record_83
+description: >-
+  Named snapshot placeholder. Pin this to a specific record's feature set when
+  reproducing it; for now it tracks the current record verbatim.
+base: current_record

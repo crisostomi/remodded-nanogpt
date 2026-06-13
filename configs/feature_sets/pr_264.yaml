@@ -1,0 +1,4 @@
+name: pr_264
+description: Zero-init per-(layer, head) XSA gates on non-paired layers (PR #264).
+enable:
+  - xsa
