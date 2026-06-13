@@ -1,0 +1,22 @@
+_commit: 005861b
+_src_path: gh:crisostomi/my-template
+default_branch: main
+dependencies:
+- rich
+- hydra-core
+- python-dotenv
+- GitPython
+description: ''
+env_init: true
+license: MIT
+maintainers:
+-   email: donatocrisostomi@gmail.com
+    name: Donato Crisostomi
+package_name: nano
+push_to_remote: true
+python_version: '>=3.9'
+remote_github_project: remodded-nanogpt
+remote_github_protocol: https
+remote_github_username: crisostomi
+remote_option: GitHub
+use_precommit: false
