@@ -34,6 +34,7 @@ def mtp_loss(ctx: "BuildContext") -> None:
     description="Start with embed tied to lm_head; copy state and untie at 2/3 of training.",
     modifies_optimizer=True,
     modifies_schedule=True,
+    template_toggleable=True,
 ))
 def untie_embed_at_2_3(ctx: "BuildContext") -> None:
     ctx.schedule.use_untie_embed = True

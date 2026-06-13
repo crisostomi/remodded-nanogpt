@@ -352,6 +352,16 @@ EXACT: list[tuple[str, str]] = [
             "        return True",
         ),
     ),
+    # ---- untie embed from lm_head at 2/3 of training ----
+    (
+        "        if step == self.split_step:\n"
+        "            self.optimizer.copy_lm_state_to_embed()",
+        guard(
+            "schedule.use_untie_embed",
+            "        if step == self.split_step:\n"
+            "            self.optimizer.copy_lm_state_to_embed()",
+        ),
+    ),
     # ---- tunable optimizer defaults (rendered from BuildContext) ----
     (
         "        adam_defaults = dict(\n"

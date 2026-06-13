@@ -1954,8 +1954,10 @@ class TrainingManager():
         self.optimizer.step(do_adam=do_adam)
 
         # At split step: copy lm_head optimizer state to embed and mark as split
+{% if schedule.use_untie_embed %}
         if step == self.split_step:
             self.optimizer.copy_lm_state_to_embed()
+{% endif %}
 
     def reset(self, state=None):
         if state is not None:
