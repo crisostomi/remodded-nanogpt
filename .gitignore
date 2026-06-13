@@ -228,3 +228,6 @@ cache_dvc/
 /experiments/runs/*
 !/experiments/runs/.gitkeep
 /experiments/tracking.jsonl
+
+# Claude Code session state / worktrees
+.claude/

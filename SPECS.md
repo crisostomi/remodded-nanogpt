@@ -1,3 +1,37 @@
+> ## ⚑ IMPLEMENTATION STATUS & ADDENDUM (updated 2026-06-13)
+>
+> **The authoritative current state and continuation guide is [`docs/HANDOFF.md`](docs/HANDOFF.md).**
+> Read that first. This file is the original MVP spec, kept as reference; the
+> notes below record what was built and how the direction evolved.
+>
+> **Done (MVP machinery, all in §"First PR"):** `FeatureSpec` + registry +
+> `BuildContext`, the 9 validation rules + semantic guards, YAML feature-set
+> loading + presets, Jinja codegen that emits `train_current_record.py`
+> behavior-equivalent to the record, local manifest / log parser / tracking
+> backends (NoOp / LocalJsonl / Flywheel-stub), the `run_combo` dry-run CLI, and
+> tests. **49 tests pass.**
+>
+> **Adaptations from this spec (agreed with the maintainer):**
+> - Package lives at **`src/nano/`** (the repo's uv src-layout template), so CLI
+>   commands are **`python -m nano.builder.codegen`** etc., not
+>   `python -m modded_nanogpt.*`. Tests are under **`src/tests/`** (the template's
+>   `testpaths`).
+> - Tooling is **`uv`** (not venv/conda); deps added via `uv add`.
+> - The record source is **vendored** at `baseline/train_gpt.py` (+
+>   `triton_kernels.py`, pinned @ `b534dfd`); the Jinja template is *derived* from
+>   it by `baseline/build_template.py` (do not hand-edit the `.j2`).
+>
+> **Direction shift (beyond this spec):** the goal is a **gene-combinatorial
+> search** repo — search over arbitrary valid *combinations* of genes to find the
+> next record — not just reproduce past records. A "feature" here is a **gene**;
+> genes come in kinds **additive / allele / substrate / tuning**; each record is a
+> coherent gene *prefix*. See `docs/GENE_MAP.md` (all 83 records → commit → genes,
+> allele groups, substrate eras). Current search space: **15 toggleable
+> architectural genes × optimizer tuning (`optim:` overrides) × full curriculum
+> (`schedule.training_stages`)**. Remaining work (entangled architecture genes,
+> the allele mechanism + optimizer alleles) is in `docs/HANDOFF.md` §7, including
+> the **no-GPU validation gap** that matters for optimizer-internal genes.
+
 Use this as the implementation spec for the coding agent.
 
 # Project spec: modular feature-search framework for `modded-nanogpt`

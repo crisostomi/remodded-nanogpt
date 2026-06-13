@@ -46,12 +46,26 @@ derived from it by `baseline/build_template.py`.
   = sign-trick + 15× vocab + 192-dim + sliced injection), each independently
   searchable.
 
-Eight features are **template-toggleable** today (their model construction,
-optimizer table *and* hot forward path are guarded): `sparse_attention_gate`,
-`xsa`, `xsa_lowering_rewrite`, `bigram_sign_trick`, `bigram_dim_192`,
-`bigram_vocab_15x`, `residual_slice_bigram_injection`, `sparse_bigram_comms`.
-The rest are structural (always-on) for the MVP; the builder refuses to disable a
-structural feature rather than emit a broken script.
+The product is a **gene-combinatorial search** repo: search over arbitrary valid
+*combinations* of genes to find the next record — not just reproduce past ones.
+Current search space:
+
+- **15 template-toggleable architectural genes** (model construction, optimizer
+  table *and* hot forward path all guarded): `sparse_attention_gate`, `xsa`,
+  `xsa_lowering_rewrite`, the bigram family (`bigram_sign_trick`, `bigram_dim_192`,
+  `bigram_vocab_15x`, `residual_slice_bigram_injection`, `sparse_bigram_comms`),
+  `fp8_lm_head`, `partial_key_offset`, `smear`, `skip_gate`,
+  `paired_head_attention`, `adam_every_other_step`, `untie_embed_at_2_3`.
+- **Tuning genes** via an `optim:` override — global `optim.adam` {lr, eps,
+  weight_decay} and `optim.normuon` {lr, momentum, beta2, weight_decay}, plus
+  per-parameter `optim.params.<label>` {lr_mul, wd_mul, adam_betas, …}.
+- **Full curriculum** via `schedule.training_stages` — batch-size / window / seq-len
+  ramps, per-stage LR, MTP-weight schedule.
+
+The remaining genes are structural (always-on); the builder refuses to disable a
+structural gene rather than emit a broken script. See **[`docs/HANDOFF.md`](docs/HANDOFF.md)**
+for the authoritative state + continuation guide and **[`docs/GENE_MAP.md`](docs/GENE_MAP.md)**
+for all 83 records mapped to commit + genes.
 
 ---
 
