@@ -107,3 +107,133 @@ def hyperparameter_sweep(
             )
         )
     return out
+
+
+# ---------------------------------------------------------------------------
+# Curriculum search (the batch / seq-len / window ramps live in TRAINING_STAGES)
+# ---------------------------------------------------------------------------
+
+#: Per-stage curriculum knobs that ``curriculum_sweep`` can ramp. ``duration`` and
+#: the ``mtp_weights_*`` schedules are deliberately excluded -- tune those via a
+#: direct ``schedule.training_stages`` override (their shapes don't ramp cleanly).
+CURRICULUM_RAMP_FIELDS = {"batch_size", "train_max_seq_len", "window_sizes", "lr_mul"}
+
+
+def _baseline_stages() -> list[dict[str, Any]]:
+    from nano.builder.context import BASELINE_TRAINING_STAGES
+
+    return BASELINE_TRAINING_STAGES
+
+
+def _is_window_pair(x: Any) -> bool:
+    """True for a single ``(lo, hi)`` sliding-window pair of plain ints."""
+    return (
+        isinstance(x, (list, tuple))
+        and len(x) == 2
+        and all(isinstance(v, int) and not isinstance(v, bool) for v in x)
+    )
+
+
+def _expand_ramp(field: str, candidate: Any, num_stages: int) -> list[Any]:
+    """Normalise a ramp candidate into one value per stage.
+
+    A scalar is broadcast to every stage; a per-stage list is used positionally.
+    ``window_sizes`` is special-cased: a single ``(lo, hi)`` pair broadcasts, a
+    list of ``num_stages`` pairs is per-stage.
+    """
+    if field == "window_sizes":
+        if _is_window_pair(candidate):
+            return [list(candidate)] * num_stages
+        ramp = list(candidate)
+        if len(ramp) != num_stages or not all(_is_window_pair(p) for p in ramp):
+            raise ValueError(
+                f"window_sizes ramp must be a (lo, hi) pair or a list of "
+                f"{num_stages} such pairs; got {candidate!r}"
+            )
+        return [list(p) for p in ramp]
+
+    if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+        return [candidate] * num_stages
+    ramp = list(candidate)
+    if len(ramp) != num_stages:
+        raise ValueError(
+            f"{field} ramp must be a scalar or a list of {num_stages} values "
+            f"(one per stage); got {candidate!r}"
+        )
+    return ramp
+
+
+def make_curriculum(
+    field_ramps: dict[str, Any], *, base_stages: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """Apply per-stage ramps onto a copy of a base curriculum.
+
+    ``field_ramps`` maps a sweepable stage field (see
+    :data:`CURRICULUM_RAMP_FIELDS`) to a *ramp*: a single value broadcast to
+    every stage, or a per-stage list. Returns a fresh ``training_stages`` list,
+    ready to drop into a ``schedule.training_stages`` override. ``base_stages``
+    defaults to the record's ``BASELINE_TRAINING_STAGES``.
+    """
+    stages = copy.deepcopy(base_stages if base_stages is not None else _baseline_stages())
+    for field, candidate in field_ramps.items():
+        if field not in CURRICULUM_RAMP_FIELDS:
+            raise ValueError(
+                f"curriculum field {field!r} is not sweepable; allowed: "
+                f"{sorted(CURRICULUM_RAMP_FIELDS)}. Tune duration / mtp_weights "
+                f"via a direct schedule.training_stages override."
+            )
+        for st, value in zip(stages, _expand_ramp(field, candidate, len(stages))):
+            st[field] = value
+    return stages
+
+
+def _ramp_tag(idx: int, candidate: Any) -> str:
+    """A compact, collision-free name fragment for one ramp option."""
+    if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+        return _fmt(candidate)  # readable for the common constant-per-curriculum sweep
+    return f"r{idx}"  # whole ramps don't repr compactly -> tag by option index
+
+
+def curriculum_sweep(
+    base_features: set[str],
+    ramps: dict[str, list[Any]],
+    *,
+    base_stages: list[dict[str, Any]] | None = None,
+    base_overrides: dict[str, Any] | None = None,
+    name_prefix: str = "curriculum",
+) -> list[FeatureSet]:
+    """Cartesian-product sweep over curriculum ramps (the curriculum search dim).
+
+    ``ramps`` maps a sweepable stage field to a list of candidate ramps, each a
+    scalar (broadcast across stages) or a per-stage list, e.g.::
+
+        {
+            "batch_size":   [8 * 2048 * 8, 16 * 2048 * 8],            # constant-per-curriculum
+            "window_sizes": [[(1, 3), (3, 7), (5, 11), (6, 13)],      # two whole ramps
+                             [(2, 4), (4, 8), (6, 12), (7, 14)]],
+        }
+
+    Each combination becomes a :class:`FeatureSet` sharing ``base_features``
+    (curriculum is config, not genes) and carrying a ``schedule.training_stages``
+    override -- the resolved stages merged onto ``base_overrides``.
+    """
+    if not ramps:
+        raise ValueError("curriculum_sweep needs at least one ramp field to sweep")
+    fields = list(ramps)
+    indexed = [list(enumerate(ramps[f])) for f in fields]
+    out: list[FeatureSet] = []
+    for combo in itertools.product(*indexed):
+        field_ramps = {f: opt for f, (_, opt) in zip(fields, combo)}
+        stages = make_curriculum(field_ramps, base_stages=base_stages)
+        overrides = copy.deepcopy(base_overrides or {})
+        overrides.setdefault("schedule", {})["training_stages"] = stages
+        tag = "__".join(f"{f}{_ramp_tag(idx, opt)}" for f, (idx, opt) in zip(fields, combo))
+        out.append(
+            FeatureSet(
+                name=f"{name_prefix}__{tag}",
+                enabled=set(base_features),
+                overrides=overrides,
+                description="curriculum sweep candidate",
+            )
+        )
+    return out

@@ -136,6 +136,68 @@ EXACT: list[tuple[str, str]] = [
             "        use_fp8 = False",
         ),
     ),
+    # ---- orthogonalizer allele slot: polar_express | newton_schulz ----
+    # Both share the same fused scaffold (the polar_express function); only the
+    # odd-polynomial iteration coefficient table differs. Newton-Schulz is the
+    # canonical Muon quintic (3.4445, -4.7750, 2.0315) applied every step.
+    # GPU-VALIDATE: the newton_schulz allele's numeric behaviour is unverified.
+    (
+        "# Computed for num_iters=5, safety_factor=2e-2, cushion=2\n"
+        "polar_express_coeffs = [\n"
+        "    (8.156554524902461, -22.48329292557795, 15.878769915207462),\n"
+        "    (4.042929935166739, -2.808917465908714, 0.5000178451051316),\n"
+        "    (3.8916678022926607, -2.772484153217685, 0.5060648178503393),\n"
+        "    (3.285753657755655, -2.3681294933425376, 0.46449024233003106),\n"
+        "    (2.3465413258596377, -1.7097828382687081, 0.42323551169305323)\n"
+        "]",
+        guard(
+            'optim.orthogonalizer == "newton_schulz"',
+            "# Newton-Schulz orthogonalization: canonical Muon quintic, applied every step.\n"
+            "polar_express_coeffs = [\n"
+            "    (3.4445, -4.7750, 2.0315),\n"
+            "    (3.4445, -4.7750, 2.0315),\n"
+            "    (3.4445, -4.7750, 2.0315),\n"
+            "    (3.4445, -4.7750, 2.0315),\n"
+            "    (3.4445, -4.7750, 2.0315),\n"
+            "]",
+            "# Computed for num_iters=5, safety_factor=2e-2, cushion=2\n"
+            "polar_express_coeffs = [\n"
+            "    (8.156554524902461, -22.48329292557795, 15.878769915207462),\n"
+            "    (4.042929935166739, -2.808917465908714, 0.5000178451051316),\n"
+            "    (3.8916678022926607, -2.772484153217685, 0.5060648178503393),\n"
+            "    (3.285753657755655, -2.3681294933425376, 0.46449024233003106),\n"
+            "    (2.3465413258596377, -1.7097828382687081, 0.42323551169305323)\n"
+            "]",
+        ),
+    ),
+    # ---- cautious weight decay (off == plain decoupled WD: drop the sign mask) ----
+    # On the E15 substrate "cautious" gates decoupled WD to elements where the
+    # update/grad agrees in sign with the param (the `mask`). Disabling the gene
+    # applies decoupled WD to all elements -- the standard decoupled-WD form.
+    # Numeric behaviour of the off-state is GPU-validation-pending (optimizer-internal).
+    (
+        "        # Cautious weight decay\n"
+        "        mask = (update * p_slice) > 0\n"
+        "        update.addcmul_(p_slice, mask, value=eff_wd_t)",
+        guard(
+            "optim.use_cautious_weight_decay",
+            "        # Cautious weight decay\n"
+            "        mask = (update * p_slice) > 0\n"
+            "        update.addcmul_(p_slice, mask, value=eff_wd_t)",
+            "        # Decoupled weight decay (cautious gating off)\n"
+            "        update.add_(p_slice * eff_wd_t)",
+        ),
+    ),
+    (
+        "        mask = (grad * p_precise) >= 0\n"
+        "        p_precise.copy_(p_precise - (p_precise * mask * wd_factor * lr_factor) - (grad * lr_factor))",
+        guard(
+            "optim.use_cautious_weight_decay",
+            "        mask = (grad * p_precise) >= 0\n"
+            "        p_precise.copy_(p_precise - (p_precise * mask * wd_factor * lr_factor) - (grad * lr_factor))",
+            "        p_precise.copy_(p_precise - (p_precise * wd_factor * lr_factor) - (grad * lr_factor))",
+        ),
+    ),
     # ---- MUDD construction (structural; guarded for table consistency) ----
     (
         "        self.init_mudd(num_layers, model_dim)",

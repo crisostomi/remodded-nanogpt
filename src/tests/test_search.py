@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from nano.builder.render import build_context, render_train_script_text
 from nano.config.presets import resolve_feature_set
 from nano.search.candidate_space import (
+    curriculum_sweep,
     hyperparameter_sweep,
     leave_one_out,
+    make_curriculum,
     pairwise_toggles,
 )
 
@@ -78,3 +82,80 @@ def test_pairwise_toggles_render():
     base = current_record()
     for fs in pairwise_toggles(base, [("sparse_attention_gate", "xsa")]):
         _build_and_compile(fs)
+
+
+# ---------------------------------------------------------------------------
+# Curriculum sweep (the batch / seq-len / window ramps -> training_stages)
+# ---------------------------------------------------------------------------
+
+def _stages(fs):
+    ctx = build_context(fs.enabled, overrides=fs.overrides)
+    return ctx.schedule.training_stages
+
+
+def test_curriculum_sweep_grid_size_uniqueness_and_validity():
+    base = current_record()
+    ramps = {
+        "batch_size":   [8 * 2048 * 8, 16 * 2048 * 8],
+        "window_sizes": [[(1, 3), (3, 7), (5, 11), (6, 13)],
+                         [(2, 4), (4, 8), (6, 12), (7, 14)]],
+    }
+    sets = curriculum_sweep(base, ramps)
+    assert len(sets) == 2 * 2                         # cartesian product
+    assert len({fs.name for fs in sets}) == len(sets)  # unique names
+    for fs in sets:
+        assert fs.enabled == base                    # curriculum is config, not genes
+        _build_and_compile(fs)                       # each is a valid, distinct script
+
+
+def test_curriculum_sweep_scalar_broadcasts_across_stages():
+    base = current_record()
+    fs = curriculum_sweep(base, {"batch_size": [12 * 2048 * 8]})[0]
+    assert [s["batch_size"] for s in _stages(fs)] == [12 * 2048 * 8] * 4
+
+
+def test_curriculum_sweep_values_reach_generated_script():
+    base = current_record()
+    fs = curriculum_sweep(base, {"window_sizes": [[(2, 4), (4, 8), (6, 12), (7, 14)]]})[0]
+    text = _build_and_compile(fs)
+    assert "window_sizes=(2, 4)" in text and "window_sizes=(7, 14)" in text
+    assert "window_sizes=(1, 3)" not in text         # baseline windows overwritten
+
+
+def test_curriculum_sweep_per_stage_ramp_threads_through():
+    base = current_record()
+    ramp = [8 * 2048 * 8, 16 * 2048 * 8, 24 * 2048 * 8, 32 * 2048 * 8]
+    fs = curriculum_sweep(base, {"batch_size": [ramp]})[0]
+    assert [s["batch_size"] for s in _stages(fs)] == ramp
+
+
+def test_curriculum_sweep_preserves_base_overrides():
+    base = current_record()
+    sets = curriculum_sweep(base, {"lr_mul": [1.0, 1.1]},
+                            base_overrides={"schedule": {"cooldown_frac": 0.55}})
+    sched = sets[0].overrides["schedule"]
+    assert sched["cooldown_frac"] == 0.55            # untouched sibling key survives
+    assert "training_stages" in sched
+    _build_and_compile(sets[0])
+
+
+def test_curriculum_sweep_requires_a_field():
+    with pytest.raises(ValueError, match="at least one ramp"):
+        curriculum_sweep(current_record(), {})
+
+
+def test_make_curriculum_defaults_to_baseline_without_mutating_it():
+    from nano.builder.context import BASELINE_TRAINING_STAGES
+
+    stages = make_curriculum({"lr_mul": 2.0})
+    assert all(s["lr_mul"] == 2.0 for s in stages)
+    assert BASELINE_TRAINING_STAGES[0]["lr_mul"] == 1.0  # module constant intact
+
+
+def test_make_curriculum_rejects_unsweepable_and_malformed_ramps():
+    with pytest.raises(ValueError, match="not sweepable"):
+        make_curriculum({"duration": [0.5, 0.5, 0.5, 0.5]})
+    with pytest.raises(ValueError, match="list of 4 values"):
+        make_curriculum({"batch_size": [1, 2, 3]})       # wrong length
+    with pytest.raises(ValueError, match="pair or a list of 4"):
+        make_curriculum({"window_sizes": [(1, 3), (3, 7), (5, 11)]})

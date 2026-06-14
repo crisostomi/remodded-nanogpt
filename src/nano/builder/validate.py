@@ -59,6 +59,30 @@ def validate_dependencies(names: set[str]) -> list[str]:
     return warnings
 
 
+def _allele_groups() -> dict[str, set[str]]:
+    """Map every allele-group name -> the set of member feature names (registry-wide)."""
+    groups: dict[str, set[str]] = {}
+    for f in FEATURES.values():
+        if f.spec.allele_group is not None:
+            groups.setdefault(f.spec.allele_group, set()).add(f.spec.name)
+    return groups
+
+
+def validate_alleles(names: set[str]) -> None:
+    """Allele groups are exclusive: at most one member of each may be enabled.
+
+    Zero is allowed at build time (partial sets stay inspectable); rendering then
+    requires exactly one via :func:`validate_renderable`.
+    """
+    for group, members in _allele_groups().items():
+        selected = sorted(members & names)
+        if len(selected) > 1:
+            raise FeatureValidationError(
+                f"allele group {group!r} is exclusive but {', '.join(selected)} are all "
+                f"enabled; pick exactly one of {sorted(members)}"
+            )
+
+
 def validate_ownership(names: set[str]) -> None:
     """Rules 5-6: no two enabled features may own the same param or buffer."""
     for kind, attr in (("parameter", "owns_params"), ("buffer", "owns_buffers")):
@@ -94,6 +118,16 @@ def validate_renderable(names: set[str]) -> None:
             "Base your feature set on `current_record` and only toggle the "
             "template-toggleable features."
         )
+
+    # Exactly one member of each allele slot must be selected to render.
+    for group, members in _allele_groups().items():
+        selected = members & names
+        if len(selected) != 1:
+            raise FeatureValidationError(
+                f"Cannot render a training script: allele slot {group!r} needs exactly "
+                f"one member enabled, got {sorted(selected) or 'none'}; choose one of "
+                f"{sorted(members)}."
+            )
 
 
 # ---------------------------------------------------------------------------

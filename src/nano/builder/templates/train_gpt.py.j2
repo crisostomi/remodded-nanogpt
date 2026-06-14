@@ -159,6 +159,16 @@ mm_t_op.register_autograd(backward_t, setup_context=setup_context_t)
 # -----------------------------------------------------------------------------
 # Polar Express
 
+{% if optim.orthogonalizer == "newton_schulz" %}
+# Newton-Schulz orthogonalization: canonical Muon quintic, applied every step.
+polar_express_coeffs = [
+    (3.4445, -4.7750, 2.0315),
+    (3.4445, -4.7750, 2.0315),
+    (3.4445, -4.7750, 2.0315),
+    (3.4445, -4.7750, 2.0315),
+    (3.4445, -4.7750, 2.0315),
+]
+{% else %}
 # Computed for num_iters=5, safety_factor=2e-2, cushion=2
 polar_express_coeffs = [
     (8.156554524902461, -22.48329292557795, 15.878769915207462),
@@ -167,6 +177,7 @@ polar_express_coeffs = [
     (3.285753657755655, -2.3681294933425376, 0.46449024233003106),
     (2.3465413258596377, -1.7097828382687081, 0.42323551169305323)
 ]
+{% endif %}
 
 @torch.compile(dynamic=False, fullgraph=True) # Must use dynamic=False or else it's much slower
 def polar_express(grad_chunk: torch.Tensor, momentum_buffer: torch.Tensor, momentum_t: torch.Tensor,
@@ -853,9 +864,14 @@ class NorMuonAndAdam:
         exp_avg.mul_(beta1).add_(g_slice, alpha=1 - beta1)
         exp_avg_sq.mul_(beta2).addcmul_(g_slice, g_slice, value=1 - beta2)
         update = exp_avg.div(exp_avg_sq.sqrt().add_(eps)).mul_(step_size_t)
+{% if optim.use_cautious_weight_decay %}
         # Cautious weight decay
         mask = (update * p_slice) > 0
         update.addcmul_(p_slice, mask, value=eff_wd_t)
+{% else %}
+        # Decoupled weight decay (cautious gating off)
+        update.add_(p_slice * eff_wd_t)
+{% endif %}
         p_slice.add_(other=update, alpha=-1.0)
 
     # -----------------------------------
@@ -921,8 +937,12 @@ class NorMuonAndAdam:
         lr_factor = lr_tensor.to(torch.float32)
         p_precise_raw = (p.to(torch.uint32) << 16) | mantissa.to(torch.uint32)
         p_precise = p_precise_raw.view(torch.float32)
+{% if optim.use_cautious_weight_decay %}
         mask = (grad * p_precise) >= 0
         p_precise.copy_(p_precise - (p_precise * mask * wd_factor * lr_factor) - (grad * lr_factor))
+{% else %}
+        p_precise.copy_(p_precise - (p_precise * wd_factor * lr_factor) - (grad * lr_factor))
+{% endif %}
         p.copy_((p_precise_raw >> 16).to(torch.uint16))
         mantissa.copy_(p_precise_raw.to(torch.uint16))
 

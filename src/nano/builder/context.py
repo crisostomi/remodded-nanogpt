@@ -140,9 +140,6 @@ class ScheduleConfig:
     ws_post_yarn_ext: int = 20
 
     use_mtp_schedule: bool = False
-    use_yarn_window_schedule: bool = False
-    use_batch_size_schedule: bool = False
-    use_max_seq_len_schedule: bool = False
     use_untie_embed: bool = False
 
     training_stages: list[dict[str, Any]] = field(default_factory=list)
@@ -165,6 +162,9 @@ class OptimConfig:
     use_polar_express: bool = False
     use_cautious_weight_decay: bool = False
     use_adam_every_other_step: bool = False
+
+    # allele slots (exactly one member selected; drives the template variant)
+    orthogonalizer: str = "polar_express"
 
 
 @dataclass

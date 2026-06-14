@@ -48,6 +48,15 @@ class FeatureSpec:
     # to disable them rather than emit a broken script.
     template_toggleable: bool = False
 
+    # Allele slot: features sharing an ``allele_group`` are mutually-exclusive
+    # variants occupying the same named slot (e.g. the ``orthogonalizer`` slot
+    # holds ``polar_express`` | ``newton_schulz``). The builder rejects enabling
+    # two members of one group, and rendering requires *exactly one* member of
+    # every group to be selected. Allele members are ``template_toggleable`` (the
+    # template renders whichever is chosen); the "exactly one" rule replaces the
+    # always-on structural guarantee for the slot.
+    allele_group: str | None = None
+
 
 @runtime_checkable
 class Feature(Protocol):

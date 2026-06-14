@@ -2,9 +2,23 @@
 
 PR #178 bundled multi-token prediction, untie-embed-at-2/3 and LR-schedule
 changes; we keep them as separate features (the spec's "PR is not the
-primitive" rule). All are structural for the MVP -- the record schedule already
-performs the window / batch-size / seq-len / yarn updates -- so ``apply`` flips
-context flags that the manifest and validation read.
+primitive" rule).
+
+The batch-size / max-seq-len / sliding-window ramps that earlier records shipped
+as standalone genes are **not** modelled here: they are points in the curriculum
+config space, fully captured by the searchable ``TRAINING_STAGES`` (see
+``BASELINE_TRAINING_STAGES`` in ``builder/context.py``). Search them with the
+``schedule.training_stages`` override directly, or ergonomically via
+``nano.search.candidate_space.curriculum_sweep``.
+
+``mtp_loss`` is toggleable as a *config* gene. On the E15 substrate multi-token
+prediction is purely the loss objective: the fused softcapped-CE kernel reads
+``n_predict = mtp_weights.shape[0]`` future tokens per position from the same
+plain next-token ``target_seq``. So its off-state is single-token prediction --
+``mtp_weights == [1.0]`` for every stage (already the record's last two stages,
+so the n_predict=1 path runs every record). The renderer collapses the schedule
+when it is disabled; no template branch is needed (see
+``render._finalize_loss_schedule``).
 """
 
 from __future__ import annotations
@@ -23,6 +37,7 @@ if TYPE_CHECKING:
     description="Multi-token prediction loss with a per-stage MTP weight schedule.",
     modifies_loss=True,
     modifies_schedule=True,
+    template_toggleable=True,
 ))
 def mtp_loss(ctx: "BuildContext") -> None:
     ctx.loss.use_mtp = True
@@ -38,32 +53,3 @@ def mtp_loss(ctx: "BuildContext") -> None:
 ))
 def untie_embed_at_2_3(ctx: "BuildContext") -> None:
     ctx.schedule.use_untie_embed = True
-
-
-@feature(FeatureSpec(
-    name="yarn_window_schedule",
-    description="YaRN RoPE updates on sliding-window size changes.",
-    modifies_schedule=True,
-))
-def yarn_window_schedule(ctx: "BuildContext") -> None:
-    ctx.schedule.use_yarn_window_schedule = True
-
-
-@feature(FeatureSpec(
-    name="batch_size_schedule",
-    description="Batch-size schedule of 8 -> 16 -> 24 across stages.",
-    modifies_schedule=True,
-    modifies_data=True,
-))
-def batch_size_schedule(ctx: "BuildContext") -> None:
-    ctx.schedule.use_batch_size_schedule = True
-
-
-@feature(FeatureSpec(
-    name="max_seq_len_schedule",
-    description="Max sequence length schedule (896 -> 2048 at 1/3 of training).",
-    modifies_schedule=True,
-    modifies_data=True,
-))
-def max_seq_len_schedule(ctx: "BuildContext") -> None:
-    ctx.schedule.use_max_seq_len_schedule = True

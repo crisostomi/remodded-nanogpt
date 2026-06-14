@@ -123,7 +123,7 @@ Each slot holds exactly one active variant at any record. Listed chronologically
 | **position_embedding** | #1 learned absolute (wpe, substrate baseline) → **#2 rotary_position_embeddings** |
 | **rotary** (RoPE freq scheme) | #2–16 standard RoPE → **#17 half_truncate_rope** |
 | **optimizer** (core) | #1 single AdamW → **#3 orthogonalized_momentum_optimizer_muon** → #4 Muon formalization (tuning) → **#15 distributed_batched_muon** (substrate) → **#41 normuon_variance_normalization** |
-| **orthogonalizer** (Newton-Schulz inner kernel) | #3 NS5 → #11 ns_iteration_rewrite (tuning) → **#27 triton_symmetric_matmul_kernel** → **#38 polar_express_orthogonalizer** → #48 split_baddbmm (tuning) → #74 fused_nesterov (additive) → **#80 paired_head_muon_qk_groups** |
+| **orthogonalizer** (Newton-Schulz inner kernel) | #3 NS5 → #11 ns_iteration_rewrite (tuning) → **#27 triton_symmetric_matmul_kernel** → **#38 polar_express_orthogonalizer** → #48 split_baddbmm (tuning) → #74 fused_nesterov (additive) → **#80 paired_head_muon_qk_groups** — ✅ **implemented as a 2-member `allele_group="orthogonalizer"` slot**: `polar_express` (default) \| `newton_schulz` (NS5 coefficients on the E15 fused scaffold; numeric-validation-pending). The other slot points (triton_symmetric, paired-head-QK) remain TODO. |
 | **attention_backend** | #1 SDPA → **#12 flex_attention_backend** → **#29 flash_attention_3_backend** → #38 FA3-via-kernels-hub (sourcing only) → #83 fa3_kernel_backend_bump (version pin) |
 | **attention_window** | #12 fixed 1024 sliding → #13 window warmup → #16 block full/partial → **#20 long_short_sliding_window_attention** → #29 discrete ws_schedule → #31 dynamic YaRN → #35 ws_short/ws_long split |
 | **grad_allreduce** | #22 bucketed_grad_all_reduce → **#23 overlap_grad_comm_with_backward** → (subsumed by #24 reduce_scatter substrate) |
@@ -165,30 +165,37 @@ The **current implementation sits in E15** (its substrate is the flattened-forwa
 
 ## 5. Coverage
 
-The current implementation has **26 features**; **24 of them map to genes** via `covered_by_current` (the other 2 are infra/plumbing features not tied to a single record gene). Coverage is measured at the **gene-row** level: a gene-row is *covered* if its `covered_by_current` points at one of the current features.
+The current implementation has **24 features**; **22 of them map to genes** via `covered_by_current` (the other 2 are infra/plumbing features not tied to a single record gene). Coverage is measured at the **gene-row** level: a gene-row is *covered* if its `covered_by_current` points at one of the current features.
+
+> **Retired into the curriculum dimension:** `yarn_window_schedule`,
+> `batch_size_schedule`, `max_seq_len_schedule` were dropped as standalone
+> features (they were no-op tags). The **8 gene-rows** they covered — the
+> batch/seq-len/window ramps of records **13,31,33,35 / 39,46 / 72,73** — are now
+> covered by the searchable `TRAINING_STAGES` curriculum dimension
+> (`search.candidate_space.curriculum_sweep`), not a named gene. They remain
+> counted in "covered" below.
 
 - **Total gene-rows:** 171
-- **Covered gene-rows:** 57
-- **Uncovered gene-rows:** 114
+- **Covered gene-rows:** 58 (50 via features + 8 via the curriculum dimension)
+- **Uncovered gene-rows:** 113
 
-### The 24 covered features (gene-row count each)
+### The 21 covered features (gene-row count each) + the curriculum dimension
 
 | Current feature | Genes it covers | Records |
 |------------------|-----------------|---------|
 | value_embeds | 8 | 9,14,15,16,17,65 |
 | fp8_lm_head | 6 | 19,21,51,67 |
-| yarn_window_schedule | 4 | 13,31,33,35 |
+| _curriculum dimension_ (`TRAINING_STAGES`) | 8 | 13,31,33,35,39,46,72,73 |
 | cautious_weight_decay | 4 | 43,50,53 |
 | bigram_hash | 4 | 62,68,71 |
 | polar_express | 3 | 38,48,74 |
+| newton_schulz | 1 | 3 |
 | normuon | 3 | 41,48,78 |
 | skip_gate | 2 | 32,55 |
 | smear | 2 | 34,52 |
-| batch_size_schedule | 2 | 39,46 |
 | untie_embed_at_2_3 | 2 | 53,65 |
 | value_embed_gates | 2 | 55,70 |
 | residual_slice_bigram_injection | 2 | 62,83 |
-| max_seq_len_schedule | 2 | 72,73 |
 | paired_head_attention | 2 | 58,80 |
 | sparse_attention_gate | 1 | 28 |
 | adam_every_other_step | 1 | 39 |

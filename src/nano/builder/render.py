@@ -7,6 +7,7 @@ from typing import Any
 
 from nano.builder.context import MUDD_PARAMS, BuildContext
 from nano.builder.validate import (
+    validate_alleles,
     validate_context,
     validate_dependencies,
     validate_feature_names,
@@ -144,6 +145,23 @@ def apply_overrides(ctx: BuildContext, overrides: dict[str, Any] | None) -> None
         ctx.metadata["tracking"] = overrides["tracking"]
 
 
+def _finalize_loss_schedule(ctx: BuildContext) -> None:
+    """Collapse the curriculum to single-token prediction when ``mtp_loss`` is off.
+
+    On the E15 substrate multi-token prediction is purely the loss objective: the
+    fused softcapped-CE kernel reads ``n_predict = mtp_weights.shape[0]`` future
+    tokens per position from the same plain next-token ``target_seq``. So the
+    mtp-off state is just ``mtp_weights == [1.0]`` for every stage (already the
+    record's last two stages, so n_predict=1 runs every record) -- no template
+    branch needed. Runs after overrides so it wins over a custom ``training_stages``.
+    """
+    if ctx.loss.use_mtp:
+        return
+    for st in ctx.schedule.training_stages:
+        st["mtp_weights_start"] = [1.0]
+        st["mtp_weights_end"] = [1.0]
+
+
 def build_context(
     feature_names: set[str],
     overrides: dict[str, Any] | None = None,
@@ -154,6 +172,7 @@ def build_context(
     feature_names = set(feature_names)
     validate_feature_names(feature_names)
     warnings = validate_dependencies(feature_names)
+    validate_alleles(feature_names)
     validate_ownership(feature_names)
 
     ctx = BuildContext(enabled_features=set(feature_names)).seed_baseline()
@@ -165,6 +184,7 @@ def build_context(
         get_feature(name).apply(ctx)
 
     apply_overrides(ctx, overrides)
+    _finalize_loss_schedule(ctx)
     prune_disabled_params(ctx)
     validate_context(ctx)
     validate_semantics(ctx)

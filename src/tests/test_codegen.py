@@ -177,3 +177,77 @@ def test_generated_manifest_has_code_hash(tmp_path):
     assert manifest["generated"]["sha256"] == hashlib.sha256(out.read_bytes()).hexdigest()
     assert (tmp_path / "triton_kernels.py").exists()  # copied alongside
     assert result["features_path"].exists()
+
+
+# ---- mtp_loss as a config gene (off == single-token prediction) ----
+
+def test_mtp_loss_on_keeps_multitoken_schedule():
+    # The record's early stages predict 3 / 2 future tokens.
+    text = _render()  # current_record, mtp on
+    assert "mtp_weights_start=[1.0, 0.5, 0.25]" in text
+    assert "mtp_weights_start=[1.0, 0.5]" in text
+
+
+def test_mtp_loss_off_collapses_every_stage_to_single_token():
+    # Off-state is n_predict=1 through the same fused kernel: mtp_weights == [1.0].
+    text = _render(disable=["mtp_loss"])
+    compile(text, "<no_mtp>", "exec")
+    assert "mtp_weights_start=[1.0], mtp_weights_end=[1.0]" in text
+    for multi in ("mtp_weights_start=[1.0, 0.5, 0.25]", "mtp_weights_start=[1.0, 0.5]",
+                  "mtp_weights_end=[1.0, 0.5, 0.0]"):
+        assert multi not in text, multi
+    # The loss machinery itself is unchanged (kernel handles n_predict=1 natively).
+    assert "FusedSoftcappedCrossEntropy.apply(" in text
+
+
+def test_mtp_loss_off_overrides_a_custom_multitoken_curriculum():
+    # mtp off means single-token regardless of what training_stages an override sets.
+    import copy
+
+    from nano.builder.context import BASELINE_TRAINING_STAGES
+
+    enabled = resolve_feature_set(preset="current_record").enabled - {"mtp_loss"}
+    stages = copy.deepcopy(BASELINE_TRAINING_STAGES)  # carries multi-token weights
+    ctx = build_context(enabled, overrides={"schedule": {"training_stages": stages}})
+    assert all(s["mtp_weights_start"] == [1.0] and s["mtp_weights_end"] == [1.0]
+               for s in ctx.schedule.training_stages)
+
+
+# ---- cautious_weight_decay toggle (off == plain decoupled WD: no sign mask) ----
+
+def test_cautious_weight_decay_on_keeps_sign_mask():
+    text = _render()  # current_record, cautious on
+    assert "mask = (update * p_slice) > 0" in text        # Adam path
+    assert "mask = (grad * p_precise) >= 0" in text        # NorMuon path
+
+
+def test_cautious_weight_decay_off_drops_mask_to_plain_decoupled_wd():
+    text = _render(disable=["cautious_weight_decay"])
+    compile(text, "<no_cwd>", "exec")
+    # no sign-agreement gating survives in either optimizer path
+    assert "mask = (update * p_slice) > 0" not in text
+    assert "mask = (grad * p_precise) >= 0" not in text
+    # plain decoupled WD applied to all elements
+    assert "update.add_(p_slice * eff_wd_t)" in text
+    assert "p_precise.copy_(p_precise - (p_precise * wd_factor * lr_factor) - (grad * lr_factor))" in text
+
+
+# ---- orthogonalizer allele slot: polar_express | newton_schulz ----
+
+POLAR_ROW = "(8.156554524902461, -22.48329292557795, 15.878769915207462)"
+NS_QUINTIC = "(3.4445, -4.7750, 2.0315)"
+
+
+def test_orthogonalizer_polar_express_is_the_record_default():
+    text = _render()  # current_record selects polar_express
+    assert POLAR_ROW in text
+    assert NS_QUINTIC not in text
+
+
+def test_orthogonalizer_newton_schulz_allele_swaps_only_the_coeffs():
+    text = _render(disable=["polar_express"], enable=["newton_schulz"])
+    compile(text, "<ns>", "exec")
+    assert text.count(NS_QUINTIC) == 5          # canonical Muon quintic, 5 steps
+    assert POLAR_ROW not in text                 # tuned polar coeffs gone
+    # the shared scaffold (the iteration loop) is unchanged -- same orthogonalizer fn
+    assert "for a, b, c in polar_express_coeffs:" in text

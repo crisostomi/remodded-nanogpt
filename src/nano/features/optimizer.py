@@ -28,13 +28,36 @@ def fp8_lm_head(ctx: "BuildContext") -> None:
     ctx.model.use_fp8_lm_head = True
 
 
+# ---------------------------------------------------------------------------
+# Orthogonalizer allele slot: exactly one of {polar_express, newton_schulz}.
+# Both share the same fused-momentum / bf16 / Triton-kernel scaffold (the
+# ``polar_express`` function); they differ ONLY in the odd-polynomial iteration
+# coefficient table. polar_express uses 5 per-step tuned (a, b, c) rows; Newton-
+# Schulz uses the canonical Muon quintic (3.4445, -4.7750, 2.0315) every step.
+# Numeric behaviour of the newton_schulz allele is GPU-validation-pending.
+# ---------------------------------------------------------------------------
+
 @feature(FeatureSpec(
     name="polar_express",
-    description="Polar Express orthogonalization in place of Newton-Schulz.",
+    description="Polar Express orthogonalization (per-step tuned coefficients).",
     modifies_optimizer=True,
+    template_toggleable=True,
+    allele_group="orthogonalizer",
 ))
 def polar_express(ctx: "BuildContext") -> None:
     ctx.optim.use_polar_express = True
+    ctx.optim.orthogonalizer = "polar_express"
+
+
+@feature(FeatureSpec(
+    name="newton_schulz",
+    description="Newton-Schulz orthogonalization (canonical Muon quintic 3.4445/-4.7750/2.0315).",
+    modifies_optimizer=True,
+    template_toggleable=True,
+    allele_group="orthogonalizer",
+))
+def newton_schulz(ctx: "BuildContext") -> None:
+    ctx.optim.orthogonalizer = "newton_schulz"
 
 
 @feature(FeatureSpec(
@@ -50,6 +73,7 @@ def normuon(ctx: "BuildContext") -> None:
     name="cautious_weight_decay",
     description="Gated (cautious) decoupled weight decay for Adam and NorMuon.",
     modifies_optimizer=True,
+    template_toggleable=True,
 ))
 def cautious_weight_decay(ctx: "BuildContext") -> None:
     ctx.optim.use_cautious_weight_decay = True

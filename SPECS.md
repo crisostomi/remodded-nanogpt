@@ -9,7 +9,7 @@
 > loading + presets, Jinja codegen that emits `train_current_record.py`
 > behavior-equivalent to the record, local manifest / log parser / tracking
 > backends (NoOp / LocalJsonl / Flywheel-stub), the `run_combo` dry-run CLI, and
-> tests. **63 tests pass.**
+> tests. **84 tests pass.**
 >
 > **Adaptations from this spec (agreed with the maintainer):**
 > - Package lives at **`src/nano/`** (the repo's uv src-layout template), so CLI
@@ -30,9 +30,16 @@
 > architectural genes × optimizer tuning (`optim:` overrides) × full curriculum
 > (`schedule.training_stages`)** — now including the entangled `value_embeds`,
 > `value_embed_gates`, `mudd_last_layers` and `bigram_hash` families (with a
-> dependency lattice; see HANDOFF §4). Remaining work (`mtp_loss`, the allele
-> mechanism + optimizer alleles) is in `docs/HANDOFF.md` §7, including the **no-GPU
-> validation gap** that matters for the loss/optimizer-internal genes.
+> dependency lattice; see HANDOFF §4). The curriculum is searched via
+> `curriculum_sweep`; the 3 former schedule "genes" (`batch_size_schedule`,
+> `max_seq_len_schedule`, `yarn_window_schedule`) were **retired** as no-op tags
+> subsumed by `TRAINING_STAGES` (HANDOFF §7c/d). `mtp_loss` is now a toggleable
+> config gene and `cautious_weight_decay` a real toggle; the **allele mechanism**
+> (`FeatureSpec.allele_group`, exactly-one-of slots) is implemented with its first
+> slot — `orthogonalizer` = `polar_express | newton_schulz`. Remaining work (the
+> other allele slots: optimizer/attention/CE/MLP) is in `docs/HANDOFF.md` §7b,
+> including the **no-GPU validation gap**: the off-states/alleles are structurally
+> verified here but their numeric behaviour needs the 8×H100 nodes (HANDOFF §2).
 
 Use this as the implementation spec for the coding agent.
 

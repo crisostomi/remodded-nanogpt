@@ -134,6 +134,32 @@ def test_renderable_accepts_current_record():
     validate_renderable(current_record())  # must not raise
 
 
+def test_mtp_loss_is_toggleable_not_structural():
+    # mtp_loss is a config gene now (off == single-token); rendering without it
+    # must not trip the structural-feature guard.
+    validate_renderable(current_record() - {"mtp_loss"})  # must not raise
+
+
+# ---- allele slots (exactly-one-of) ----
+
+def test_allele_members_are_mutually_exclusive():
+    # polar_express and newton_schulz occupy the same orthogonalizer slot.
+    with pytest.raises(FeatureValidationError, match="allele group 'orthogonalizer' is exclusive"):
+        build_context(current_record() | {"newton_schulz"})
+
+
+def test_rendering_requires_one_orthogonalizer():
+    with pytest.raises(FeatureValidationError, match="allele slot 'orthogonalizer' needs exactly one"):
+        validate_renderable(current_record() - {"polar_express"})
+
+
+def test_swapping_the_orthogonalizer_allele_is_valid():
+    swapped = (current_record() - {"polar_express"}) | {"newton_schulz"}
+    ctx = build_context(swapped)            # builds + validates cleanly
+    validate_renderable(swapped)            # exactly one member -> renderable
+    assert ctx.optim.orthogonalizer == "newton_schulz"
+
+
 def test_narrow_bigram_dim_requires_residual_slice():
     # Disabling the sliced injection while keeping the 192-dim bigram is invalid:
     # the full-residual add only type-checks when bigram_dim == model_dim.

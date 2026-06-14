@@ -27,9 +27,6 @@ enable:
   - mudd_last_layers
   - paired_head_attention
   - partial_key_offset
-  - yarn_window_schedule
-  - batch_size_schedule
-  - max_seq_len_schedule
 
 schedule:
   num_scheduled_iterations: 1375

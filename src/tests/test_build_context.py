@@ -148,3 +148,26 @@ def test_curriculum_override_changes_stages():
     ctx = build_context(current_record(), overrides={"schedule": {"training_stages": stages}})
     assert ctx.schedule.training_stages[0]["batch_size"] == 12 * 2048 * 8
     assert ctx.schedule.training_stages[0]["window_sizes"] == [2, 4]
+
+
+def test_retired_curriculum_genes_are_not_registered():
+    # batch_size_schedule / max_seq_len_schedule / yarn_window_schedule were
+    # no-op manifest tags (their flags were read by nothing); the batch / seq-len
+    # / window ramps live in the searchable TRAINING_STAGES, so they were retired.
+    from nano.features.registry import FEATURES
+
+    retired = {"batch_size_schedule", "max_seq_len_schedule", "yarn_window_schedule"}
+    assert retired.isdisjoint(FEATURES)
+    assert retired.isdisjoint(current_record())  # and gone from the record preset
+
+
+def test_retiring_curriculum_genes_left_the_ramps_in_the_curriculum():
+    # Proof the retired genes were no-ops: the record still ramps batch size,
+    # seq len and window across the four stages via TRAINING_STAGES alone.
+    ctx = build_context(current_record())
+    batches = [s["batch_size"] for s in ctx.schedule.training_stages]
+    seqlens = [s["train_max_seq_len"] for s in ctx.schedule.training_stages]
+    windows = [s["window_sizes"] for s in ctx.schedule.training_stages]
+    assert batches == [8 * 2048 * 8, 16 * 2048 * 8, 24 * 2048 * 8, 24 * 2048 * 8]
+    assert seqlens == [896, 2048, 2048, 2048]
+    assert windows == [[1, 3], [3, 7], [5, 11], [6, 13]]
