@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>remodded-nanogpt · Status Report</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --faint:#6e7681;
+    --amber:#f0b429; --teal:#2dd4bf; --violet:#a371f7; --blue:#58a6ff;
+    --rose:#ff7b72; --green:#3fb950; --orange:#f0883e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1000px; margin:0 auto; padding:36px 24px 90px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.88em;
+    background:#1b2230; border:1px solid var(--border); border-radius:5px; padding:.06em .38em; color:#c9d4e3}
+  h1{font-size:31px; margin:0 0 6px; letter-spacing:-.02em}
+  h1 .mono{color:var(--blue); font-size:27px}
+  .sub{color:var(--muted); margin:0 0 26px; max-width:760px}
+  h2{font-size:20px; margin:42px 0 4px; letter-spacing:-.01em; display:flex; align-items:baseline; gap:11px}
+  h2 .n{color:var(--faint); font-weight:600; font-size:15px; font-family:ui-monospace,monospace}
+  h2 .tag{color:var(--muted); font-weight:400; font-size:13px}
+  h3{font-size:15px; margin:18px 0 6px}
+  p{margin:10px 0}
+  .lead{color:var(--muted); max-width:820px}
+  .tldr{background:linear-gradient(180deg,#172033,#141b27); border:1px solid #2b3a55;
+    border-left:4px solid var(--blue); border-radius:10px; padding:16px 20px; margin:8px 0 8px}
+  .tldr b{color:var(--blue)}
+  hr{border:0; border-top:1px solid var(--border); margin:36px 0}
+
+  /* stat ribbon */
+  .stats{display:flex; flex-wrap:wrap; gap:10px; margin:18px 0 4px}
+  .stat{flex:1 1 120px; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 14px}
+  .stat .v{font-size:24px; font-weight:700; letter-spacing:-.02em}
+  .stat .l{color:var(--muted); font-size:12px; margin-top:2px}
+  .stat.g .v{color:var(--green)} .stat.b .v{color:var(--blue)} .stat.a .v{color:var(--amber)}
+  .stat.v_ .v{color:var(--violet)} .stat.o .v{color:var(--orange)}
+
+  /* cards */
+  .cards{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:16px 0}
+  @media(max-width:720px){.cards{grid-template-columns:1fr}}
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:11px; padding:15px 17px}
+  .card h3{margin:0 0 6px; display:flex; align-items:center; gap:8px}
+  .card p{margin:6px 0 0; color:var(--muted); font-size:13.5px}
+  .card.goal{border-left:3px solid var(--green)}
+  .card.prob{border-left:3px solid var(--orange)}
+
+  /* badges */
+  .badge{display:inline-block; font-size:11px; font-weight:700; letter-spacing:.02em;
+    padding:2px 8px; border-radius:999px; vertical-align:middle}
+  .bd-done{background:#16351f; color:var(--green); border:1px solid #244d30}
+  .bd-gpu{background:#3a2e12; color:var(--amber); border:1px solid #5c4a1d}
+  .bd-blk{background:#3a1d1a; color:var(--rose); border:1px solid #5c2a25}
+  .bd-cfg{background:#13303a; color:var(--teal); border:1px solid #1d4c5c}
+
+  /* status list */
+  .slist{list-style:none; padding:0; margin:14px 0}
+  .slist li{background:var(--panel); border:1px solid var(--border); border-radius:9px;
+    padding:11px 15px; margin:8px 0; display:flex; gap:12px; align-items:flex-start}
+  .slist .ic{font-size:16px; line-height:1.4; flex:0 0 auto}
+  .slist .bd{flex:1}
+  .slist .bd b{font-weight:650}
+  .slist .bd .d{color:var(--muted); font-size:13px; margin-top:2px}
+
+  /* coverage bar */
+  .covwrap{margin:14px 0}
+  .covbar{display:flex; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--border); font-size:12.5px; font-weight:600}
+  .covbar .c1{background:linear-gradient(180deg,#1f5132,#19412a); color:#b9f0cb; display:flex; align-items:center; justify-content:center}
+  .covbar .c2{background:#1b2230; color:var(--muted); display:flex; align-items:center; padding-left:14px; flex:1}
+  .covnote{color:var(--muted); font-size:13px; margin-top:8px}
+
+  /* table */
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:13.5px}
+  th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+  th{color:var(--faint); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em}
+  td .sz{color:var(--orange); font-weight:700; font-family:ui-monospace,monospace}
+  tr:last-child td{border-bottom:0}
+
+  .foot{margin-top:46px; padding-top:16px; border-top:1px solid var(--border); color:var(--faint); font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1><span class="mono">remodded-nanogpt</span> · Status Report</h1>
+  <p class="sub">What this project is, why "render all 171 historical genes" is not the target, what's blocking it, and exactly where we stand today. Companion to the visual <a href="gene_map.html" style="color:var(--blue)">Gene Map</a>.</p>
+
+  <div class="tldr">
+    <b>In one paragraph.</b> This repo is a <b>search engine for the modded-nanogpt speedrun</b>. A record is a set of small composable changes called <b>genes</b>; we pick any valid combination, auto-generate a runnable training script, and search for the next record (#84). We have <b>24 genes</b> and an engine that renders the current record byte-for-byte. "Coverage" (today <b>58 / 171</b>) measures how much of the <i>historical</i> gene-set our single-substrate engine can render — it is a progress gauge, <b>not a goal to hit 100%</b>. Most of the uncovered 113 are not missing toggles: they are <b>whole different model scaffolds</b> (substrates) our generator can't emit, or tuning knobs we deliberately model as config instead of genes.
+  </div>
+
+  <!-- ===================== GOAL ===================== -->
+  <h2><span class="n">1</span> The goal <span class="tag">what success looks like</span></h2>
+  <div class="cards">
+    <div class="card goal">
+      <h3>✅ What we ARE building</h3>
+      <p>A <b>gene-combinatorial search engine</b>. Pick any valid subset of genes → generate a static, fast, <code>torch.compile</code>-friendly <code>train_gpt.py</code> → measure → search for a <b>new</b> record (#84). Genes are resolved at <i>generation</i> time, so there's no runtime branching in the hot path.</p>
+    </div>
+    <div class="card prob">
+      <h3>🚫 What we are NOT building</h3>
+      <p>A reproduction of the 83 past records. Those are <b>known-good reference points and a quarry of genes</b> to recombine — not the deliverable. Reproducing all of them would need a fundamentally bigger generator (see Problem&nbsp;1) and is explicitly out of scope.</p>
+    </div>
+  </div>
+  <p class="lead">The engine sits on <b>one substrate</b> — era <b style="color:var(--green)">E15</b>, the current record's scaffold. Every gene is an E15-compatible change. "Render" means: emit a training script for a chosen gene combination, on that one scaffold.</p>
+
+  <!-- ===================== STATUS ===================== -->
+  <h2><span class="n">2</span> Current status <span class="tag">where we are today</span></h2>
+  <div class="stats">
+    <div class="stat b"><div class="v">24</div><div class="l">genes registered</div></div>
+    <div class="stat g"><div class="v">23</div><div class="l">toggleable</div></div>
+    <div class="stat o"><div class="v">1</div><div class="l">structural (always-on)</div></div>
+    <div class="stat v_"><div class="v">1</div><div class="l">allele slot live</div></div>
+    <div class="stat a"><div class="v">58/171</div><div class="l">gene-rows covered</div></div>
+    <div class="stat g"><div class="v">84</div><div class="l">tests pass</div></div>
+  </div>
+
+  <h3>Delivered recently — verified here without a GPU</h3>
+  <p class="lead">Verification on this box = <b>compile</b> the generated script + <b>byte-equivalence</b> of the current record vs the vendored <code>baseline/train_gpt.py</code> (the model / forward / optimizer code stays identical) + <b>structural greps</b> of each off-state + <b>84 unit tests</b>.</p>
+  <ul class="slist">
+    <li><span class="ic">✅</span><div class="bd"><b>Curriculum closeout</b> <span class="badge bd-done">done</span><div class="d">Retired 3 redundant schedule "genes" (they were no-op tags subsumed by the searchable <code>TRAINING_STAGES</code>); added a <code>curriculum_sweep</code> search helper.</div></div></li>
+    <li><span class="ic">✅</span><div class="bd"><b><code>mtp_loss</code> made toggleable</b> <span class="badge bd-done">done</span> <span class="badge bd-cfg">config gene</span><div class="d">Multi-token prediction turned out to be purely a loss-objective knob; "off" = single-token. No GPU risk — the off path already runs in the record's last two stages.</div></div></li>
+    <li><span class="ic">✅</span><div class="bd"><b><code>cautious_weight_decay</code> made a real toggle</b> <span class="badge bd-done">done</span> <span class="badge bd-gpu">numerics GPU-pending</span><div class="d">"Off" = plain decoupled weight decay (drops the sign-agreement mask). Structurally faithful; numeric behaviour needs a real run to confirm.</div></div></li>
+    <li><span class="ic">✅</span><div class="bd"><b>Allele mechanism + first allele</b> <span class="badge bd-done">done</span> <span class="badge bd-gpu">numerics GPU-pending</span><div class="d">"Exactly-one-of" slots (<code>FeatureSpec.allele_group</code>). First live slot: <b>orthogonalizer</b> = <code>polar_express</code> (record default) ↔ <code>newton_schulz</code> — a faithful coefficient swap on the same scaffold.</div></div></li>
+  </ul>
+
+  <!-- ===================== PROBLEMS ===================== -->
+  <h2><span class="n">3</span> The problems <span class="tag">why coverage is 58, not 171</span></h2>
+  <div class="covwrap">
+    <div class="covbar">
+      <div class="c1" style="flex:0 0 34%">58 covered (34%)</div>
+      <div class="c2">113 uncovered</div>
+    </div>
+    <p class="covnote">Covered = 50 via registered genes + 8 via the searchable <code>TRAINING_STAGES</code> curriculum dimension.</p>
+  </div>
+  <p class="lead">The 113 uncovered gene-rows are <b>not</b> "toggles we forgot to write." They fall into three buckets, plus one cross-cutting constraint (the no-GPU gap). The bottleneck is the <b>single substrate</b>, not effort.</p>
+
+  <table>
+    <tr><th style="width:210px">Bucket of the 113 uncovered</th><th style="width:70px">~size</th><th>Why it is not "just add a toggle"</th></tr>
+    <tr>
+      <td><b>Substrate rewrites</b><br><span style="color:var(--faint);font-size:12px">eras E0–E14</span></td>
+      <td><span class="sz">~26</span></td>
+      <td>A substrate is a <b>whole different model / optimizer / forward scaffold</b>, not a feature. Our generator emits exactly <b>one</b> scaffold (E15). Covering these means the generator must be able to <i>emit an older scaffold</i> — a multi-substrate / era-aware generator, which is a much larger architecture change. <b>This is the hard ceiling.</b></td>
+    </tr>
+    <tr>
+      <td><b>Tuning genes</b><br><span style="color:var(--faint);font-size:12px">LR, betas, iters, version bumps</span></td>
+      <td><span class="sz">~11+</span></td>
+      <td>Deliberately <b>not</b> modelled as genes. They are searchable config dimensions (<code>optim.*</code> overrides + the <code>TRAINING_STAGES</code> curriculum). They're already covered <i>by search</i>; turning them into genes would be redundant — exactly why we just <b>retired</b> the 3 schedule genes.</td>
+    </tr>
+    <tr>
+      <td><b>Early-era alleles &amp; additives</b><br><span style="color:var(--faint);font-size:12px">the rest</span></td>
+      <td><span class="sz">~rest</span></td>
+      <td>They assume an <b>older scaffold</b> (pre-value-embeds, pre-MUDD, pre-bigram, FlexAttention, merged-QKV…). Porting each forward to E15 is per-gene work; some are <b>superseded</b> (FlexAttention was replaced by FlashAttention-3, which the code already uses); the optimizer/kernel ones need <b>GPU validation</b>. <code>newton_schulz</code> was one that ported cleanly (+1).</td>
+    </tr>
+  </table>
+
+  <div class="cards">
+    <div class="card prob">
+      <h3>⚠️ Cross-cutting: the no-GPU validation gap</h3>
+      <p>This dev box has <b>no GPU and no <code>torch</code></b>. Architecture toggles are fully verified by compile + byte-equivalence + greps. But for <b>optimizer- / loss-internal numerics</b> (cautious-WD "off", <code>newton_schulz</code>), a numeric bug wouldn't surface until a real 8×H100 run — those are implemented faithfully but flagged <span class="badge bd-gpu">GPU-pending</span>.</p>
+    </div>
+    <div class="card goal">
+      <h3>✅ Already unblocked: faithful sourcing</h3>
+      <p>The historical record source <i>is</i> reachable now (verified byte-identical to our baseline), so we can <b>harvest real implementations</b> instead of guessing. That removed the <i>fidelity</i> problem — but <b>not</b> the substrate problem above. Harvesting helps only for genes that compose with E15.</p>
+    </div>
+  </div>
+
+  <!-- ===================== NEXT ===================== -->
+  <h2><span class="n">4</span> What's next <span class="tag">two very different scales</span></h2>
+  <ul class="slist">
+    <li><span class="ic">🟢</span><div class="bd"><b>Incremental (feasible now): the 4 remaining allele slots</b> <span class="badge bd-gpu">optimizer/kernel ones GPU-pending</span><div class="d"><code>optimizer</code> (add Muon next to NorMuon), <code>attention_backend</code>, <code>cross_entropy</code>, <code>mlp_kernel</code> — plus a few cleanly-porting additives. Realistically moves coverage from <b>58 → ~70–80</b>, gene by gene, like <code>newton_schulz</code>.</div></div></li>
+    <li><span class="ic">🔴</span><div class="bd"><b>Full coverage (project-scale): a multi-substrate generator</b> <span class="badge bd-blk">large effort</span><div class="d">Reaching 171 means the generator can <i>emit older scaffolds</i> and reproduce all 83 records — the GENE_MAP "era-by-era expansion plan", anchored at E15 and walking backward. This is a different, much bigger project, and (per the goal) not what the search engine needs.</div></div></li>
+    <li><span class="ic">🟡</span><div class="bd"><b>GPU validation (for the agent with the 8×H100 nodes)</b> <span class="badge bd-gpu">blocked here</span><div class="d">Train-and-compare the cautious-WD "off" state and the <code>newton_schulz</code> allele; then harvest + validate the optimizer/kernel alleles above.</div></div></li>
+  </ul>
+
+  <div class="foot">
+    Built from <code>docs/HANDOFF.md</code>, <code>docs/GENE_MAP.md</code>, <code>SPECS.md</code> and <code>src/nano/</code>.
+    Snapshot: 24 genes (23 toggleable, 1 structural) · 1 live allele slot · 58/171 gene-rows covered · 84 tests passing · engine on substrate E15.
+  </div>
+
+</div>
+</body>
+</html>
