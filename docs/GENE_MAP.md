@@ -11,7 +11,7 @@ Every record in the speedrun is modeled as a **coherent prefix of genes**: recor
 
 The chain is therefore: a sequence of **eras** (delimited by substrate genes), each containing a stack of additive genes plus a set of **allele slots** whose selected variant advances over time. The generator's job is: given a target record *N*, choose the era substrate active at *N*, the allele selected in each slot as of *N*, and the set of additive genes present at *N*, then emit the parameterized training script.
 
-**Counts:** 83 records · 171 genes · 10 allele slots · ~13 era-defining substrate rewrites · 57 covered gene-rows / 114 uncovered.
+**Counts:** 83 records · 171 genes · 10 allele slots · ~13 era-defining substrate rewrites · 58 covered gene-rows / 113 uncovered.
 
 ---
 
@@ -207,7 +207,7 @@ The current implementation has **24 features**; **22 of them map to genes** via 
 | bigram_vocab_15x | 1 | 83 |
 | bigram_dim_192 | 1 | 83 |
 
-### The gap (114 uncovered gene-rows)
+### The gap (113 uncovered gene-rows)
 
 The gap is dominated by: every **substrate** rewrite (~26 gene-rows — none are "features", they're scaffolds), every **tuning** gene (LR/iters/betas/version bumps — intentionally not features), and the **early-era alleles/additives** the current code simply predates (rotary, the whole Muon→NorMuon optimizer lineage's earlier stages, FlexAttention, the merged-QKV/long-short window machinery, untie/retie embedding flips, the grad-comm evolution #22–24, backout #40, the CE/MLP/transpose Triton kernels #59,60,75,76,79, etc.). These are not bugs in coverage — they are records that only become renderable once the generator can *select an era* and *re-introduce an old allele/substrate*, which the current single-substrate implementation cannot do.
 
